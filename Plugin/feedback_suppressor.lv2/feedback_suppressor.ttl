@@ -8,24 +8,23 @@
 @prefix urid:  <http://lv2plug.in/ns/ext/urid#> .
 @prefix work:  <http://lv2plug.in/ns/ext/worker#> .
 
-<http://lv2plug.in/plugins/eg-sampler#sample>
+<http://jamiejessup.com/open_feedback_suppressor#sample>
 	a lv2:Parameter ;
 	rdfs:label "sample" ;
 	rdfs:range atom:Path .
 
-<http://lv2plug.in/plugins/eg-sampler>
+<http://jamiejessup.com/open_feedback_suppressor>
 	a lv2:Plugin ;
-	doap:name "Example Sampler" ;
-	doap:license <http://opensource.org/licenses/isc> ;
-	lv2:project <http://lv2plug.in/ns/lv2> ;
+	doap:name "Feedback Suppressor" ;
+	doap:license <http://opensource.org/licenses/GPL-2.0> ;
 	lv2:requiredFeature urid:map ,
 		work:schedule ;
 	lv2:optionalFeature lv2:hardRTCapable ,
 		state:loadDefaultState ;
 	lv2:extensionData state:interface ,
 		work:interface ;
-	ui:ui <http://lv2plug.in/plugins/eg-sampler#ui> ;
-	patch:writable <http://lv2plug.in/plugins/eg-sampler#sample> ;
+	ui:ui <http://jamiejessup.com/open_feedback_suppressor#ui> ;
+	patch:writable <http://jamiejessup.com/open_feedback_suppressor#sample> ;
 	lv2:port [
 		a lv2:InputPort ,
 			atom:AtomPort ;
@@ -53,14 +52,14 @@
 		lv2:name "Out"
 	] ;
 	state:state [
-		<http://lv2plug.in/plugins/eg-sampler#sample> <click.wav>
+		<http://jamiejessup.com/open_feedback_suppressor#sample> <click.wav>
 	] .
 
-<http://lv2plug.in/plugins/eg-sampler#ui>
+<http://jamiejessup.com/open_feedback_suppressor#ui>
 	a ui:GtkUI ;
 	lv2:requiredFeature urid:map ;
 	ui:portNotification [
-		ui:plugin <http://lv2plug.in/plugins/eg-sampler> ;
+		ui:plugin <http://jamiejessup.com/open_feedback_suppressor> ;
 		lv2:symbol "notify" ;
 		ui:notifyType atom:Blank
 	] .

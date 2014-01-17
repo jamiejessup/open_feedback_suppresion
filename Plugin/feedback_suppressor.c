@@ -461,7 +461,7 @@ extension_data(const char* uri)
 }
 
 static const LV2_Descriptor descriptor = {
-	EG_SAMPLER_URI,
+	FS_URI,
 	instantiate,
 	connect_port,
 	NULL,  // activate,

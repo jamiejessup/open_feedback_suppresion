@@ -1,32 +1,41 @@
-CC=g++
-CFLAGS=-O3 -Wall -fPIC
+CC=gcc
+CFLAGS=-O3 -Wall -fPIC -std=c99 $(shell pkg-config --cflags gtk+-2.0 sndfile)
 
 INCLUDES=
-LDFLAGS= -shared
+LDFLAGS= $(shell pkg-config --libs gtk+-2.0 sndfile) -shared
 
-SOURCES=feedback_supressor.c biquad_filter.c
-OBJ = $(SOURCES:.c=.o)
-FS = feedbackSupressor.lv2/feedback_supressor.so
+DSPSOURCES=feedback_suppressor.c biquad_filter.c
+DSPOBJECTS = $(DSPSOURCES:.c=.o)
+DSP = feedback_suppressor.lv2/feedback_suppressor.so
 
-all: folder plugin
+UISOURCES=feedback_suppressor_ui.c
+UIOBJECTS = $(UISOURCES:.c=.o)
+UI = feedback_suppressor.lv2/feedback_suppressor_ui.so
+
+all: folder dsp ui
 
 folder:
-	mkdir -p feedbackSupressor.lv2/
+	mkdir -p feedback_suppressor.lv2/
 
 install:
-	cp -r feedbackSupressor.lv2/ /usr/lib/lv2/
+	cp -r feedback_suppressor.lv2/ /usr/lib/lv2/
 
 uninstall:
-	rm -r /usr/lib/lv2/feedbackSupressor.lv2/
+	rm -r /usr/lib/lv2/feedback_suppressor.lv2/
 
-plugin: $(SOURCES) $(FS)
+dsp: $(DSPSOURCES) $(DSP)
 
-$(FS): $(OBJ)
-	$(CC) $(OBJ) $(INCLUDES) $(CFLAGS) $(LDFLAGS) -o $@
+ui: $(UISOURCES) $(UI)
+
+$(DSP): $(DSPOBJECTS)
+	$(CC) $(DSPOBJECTS) $(INCLUDES) $(CFLAGS) $(LDFLAGS) -o $@
+	
+$(UI): $(UIOBJECTS)
+	$(CC) $(UIOBJECTS) $(INCLUDES) $(CFLAGS) $(LDFLAGS) -o $@
 
 .cpp.o:
 	$(CC) $< -g $(CFLAGS) -c -o $@
 
 clean:
-	rm -f feedbackSupressor.lv2/feedback_supressor.so
+	rm -f feedback_suppressor.lv2/feedback_supressor.so
 	rm *.o

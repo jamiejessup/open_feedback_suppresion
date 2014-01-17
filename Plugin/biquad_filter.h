@@ -6,6 +6,8 @@
 extern "C" {
 #endif
 
+#define PI 3.14159265358979323846264338327
+
 typedef struct biQuadFilt{
     bool enabled;
     float fc;

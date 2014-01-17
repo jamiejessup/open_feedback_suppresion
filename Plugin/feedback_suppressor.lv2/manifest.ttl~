@@ -8,12 +8,12 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix ui:   <http://lv2plug.in/ns/extensions/ui#> .
 
-<http://lv2plug.in/plugins/eg-sampler>
+<http://jamiejessup.com/open_feedback_suppressor>
 	a lv2:Plugin ;
-	lv2:binary <sampler@LIB_EXT@> ;
-	rdfs:seeAlso <sampler.ttl> .
+	lv2:binary <feedback_suppressor.so> ;
+	rdfs:seeAlso <feedback_suppressor.ttl> .
 
 <http://lv2plug.in/plugins/eg-sampler#ui>
 	a ui:GtkUI ;
-	ui:binary <sampler_ui@LIB_EXT@> ;
-	rdfs:seeAlso <sampler.ttl> .
+	ui:binary <feedback_suppressor_ui.so> ;
+	rdfs:seeAlso <feedback_suppressor.ttl> .

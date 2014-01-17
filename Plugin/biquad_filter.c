@@ -45,7 +45,7 @@ void addFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int index, fl
         filterBank[index].fs = fs;
 
 
-        float w0 = 2*M_PI*fc/fs;
+        float w0 = 2*PI*fc/fs;
         float wS = sin(w0);
         float wC = cos(w0);
         float A = sqrt(pow(10,gain/20));
@@ -79,7 +79,7 @@ void addNotchFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int inde
         filterBank[index].fs = fs;
 
 
-        float w0 = 2*M_PI*fc/fs;
+        float w0 = 2*PI*fc/fs;
         float wS = sin(w0);
         float wC = cos(w0);
         float alpha = wS/(2*q);

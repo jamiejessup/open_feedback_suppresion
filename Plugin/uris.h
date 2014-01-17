@@ -22,10 +22,10 @@
 #include "lv2/lv2plug.in/ns/ext/midi/midi.h"
 #include "lv2/lv2plug.in/ns/ext/state/state.h"
 
-#define EG_SAMPLER_URI          "http://lv2plug.in/plugins/eg-sampler"
-#define EG_SAMPLER__sample      EG_SAMPLER_URI "#sample"
-#define EG_SAMPLER__applySample EG_SAMPLER_URI "#applySample"
-#define EG_SAMPLER__freeSample  EG_SAMPLER_URI "#freeSample"
+#define FS_URI          "http://jamiejessup.com/open_feedback_suppressor"
+#define FS__sample      FS_URI "#sample"
+#define FS__applySample FS_URI "#applySample"
+#define FS__freeSample  FS_URI "#freeSample"
 
 typedef struct {
 	LV2_URID atom_Blank;
@@ -52,9 +52,9 @@ map_sampler_uris(LV2_URID_Map* map, SamplerURIs* uris)
 	uris->atom_Sequence      = map->map(map->handle, LV2_ATOM__Sequence);
 	uris->atom_URID          = map->map(map->handle, LV2_ATOM__URID);
 	uris->atom_eventTransfer = map->map(map->handle, LV2_ATOM__eventTransfer);
-	uris->eg_applySample     = map->map(map->handle, EG_SAMPLER__applySample);
-	uris->eg_freeSample      = map->map(map->handle, EG_SAMPLER__freeSample);
-	uris->eg_sample          = map->map(map->handle, EG_SAMPLER__sample);
+	uris->eg_applySample     = map->map(map->handle, FS__applySample);
+	uris->eg_freeSample      = map->map(map->handle, FS__freeSample);
+	uris->eg_sample          = map->map(map->handle, FS__sample);
 	uris->midi_Event         = map->map(map->handle, LV2_MIDI__MidiEvent);
 	uris->patch_Set          = map->map(map->handle, LV2_PATCH__Set);
 	uris->patch_property     = map->map(map->handle, LV2_PATCH__property);
