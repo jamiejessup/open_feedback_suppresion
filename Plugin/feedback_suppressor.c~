@@ -328,7 +328,6 @@ run(LV2_Handle instance,
 
 	// Read incoming events
 	LV2_ATOM_SEQUENCE_FOREACH(self->control_port, ev) {
-	  //do nothing for now
 	}
 
 	// Add zeros to end if sample not long enough (or not playing)

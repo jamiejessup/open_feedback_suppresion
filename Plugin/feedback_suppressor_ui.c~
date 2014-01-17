@@ -161,6 +161,7 @@ port_event(LV2UI_Handle handle,
 			}
 
 			const char* uri = (const char*)LV2_ATOM_BODY_CONST(file_uri);
+			gtk_label_set_text(GTK_LABEL(ui->label), uri);
 		} else {
 			fprintf(stderr, "Unknown message type.\n");
 		}
