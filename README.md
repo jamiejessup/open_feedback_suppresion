@@ -1,4 +1,4 @@
-open_feedback_suppresion
+Open Feedback Supression
 ========================
 
-Feedback Suppressor Plugin
+Plugin and tools for feedback supression including automatic detection.
