@@ -8,9 +8,9 @@
 @prefix urid:  <http://lv2plug.in/ns/ext/urid#> .
 @prefix work:  <http://lv2plug.in/ns/ext/worker#> .
 
-<http://jamiejessup.com/open_feedback_suppressor#sample>
+<http://jamiejessup.com/open_feedback_suppressor#filterList>
 	a lv2:Parameter ;
-	rdfs:label "sample" ;
+	rdfs:label "filterList" ;
 	rdfs:range atom:Path .
 
 <http://jamiejessup.com/open_feedback_suppressor>
@@ -24,13 +24,12 @@
 	lv2:extensionData state:interface ,
 		work:interface ;
 	ui:ui <http://jamiejessup.com/open_feedback_suppressor#ui> ;
-	patch:writable <http://jamiejessup.com/open_feedback_suppressor#sample> ;
+	patch:writable <http://jamiejessup.com/open_feedback_suppressor#filterList> ;
 	lv2:port [
 		a lv2:InputPort ,
 			atom:AtomPort ;
 		atom:bufferType atom:Sequence ;
-		atom:supports <http://lv2plug.in/ns/ext/midi#MidiEvent> ,
-			patch:Message ;
+		atom:supports patch:Message ;
 		lv2:designation lv2:control ;
 		lv2:index 0 ;
 		lv2:symbol "control" ;
@@ -56,10 +55,7 @@
 		lv2:index 3 ;
 		lv2:symbol "out" ;
 		lv2:name "Out"
-	] ;
-	state:state [
-		<http://jamiejessup.com/open_feedback_suppressor#sample> <click.wav>
-	] .
+	].
 
 <http://jamiejessup.com/open_feedback_suppressor#ui>
 	a ui:GtkUI ;

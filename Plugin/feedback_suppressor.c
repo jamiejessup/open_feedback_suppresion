@@ -40,6 +40,9 @@
 #include "./uris.h"
 #include "biquad_filter.h"
 
+#define DEFAULT_BANK_SIZE 12
+#define MAX_BANK_SIZE 12
+
 enum {
 	FS_CONTROL 	= 0,
 	FS_NOTIFY  	= 1,
@@ -48,24 +51,18 @@ enum {
 };
 
 
-typedef struct {
-	SF_INFO info;      // Info about sample from sndfile
-	float*  data;      // Sample data in float
-	char*   path;      // Path of file
-	size_t  path_len;  // Length of path
-} Sample;
 
 typedef struct {
-	int size;
-	int index;
-	BiQuadFilter *bank;
+	int size; //max number of filters allowed in the bank
+	int index; //current number of filters
+	BiQuadFilter *filters;
 } FilterBank;
 
 typedef struct {
 	char *path;
 	size_t path_len;
 	float *notch_fcs;
-	size_t *list_len;
+	size_t list_len;
 } FilterList;
 
 typedef struct {
@@ -80,8 +77,10 @@ typedef struct {
 	// Logger convenience API
 	LV2_Log_Logger logger;
 
-	// Sample
-	Sample* sample;
+	//Filter List
+	FilterList *filter_list;
+
+	FilterBank *filterBank;
 
 	// Ports
 	const LV2_Atom_Sequence* control_port;
@@ -96,8 +95,9 @@ typedef struct {
 	FeedbackSuppressorURIs uris;
 } FeedbackSuppressor;
 
+
 /**
-   An atom-like message used internally to apply/free samples.
+   An atom-like message used internally to apply/free filter lists.
 
    This is only used internally to communicate with the worker, it is never
    sent to the outside world via a port since it is not POD.  It is convenient
@@ -106,71 +106,74 @@ typedef struct {
  */
 typedef struct {
 	LV2_Atom atom;
-	Sample*  sample;
-} SampleMessage;
+	FilterList*  list;
+} FilterListMessage;
+
+static FilterBank*
+init_filter_bank(FeedbackSuppressor* self, int num_filters) {
+	FilterBank *bank = (FilterBank*)malloc(sizeof(FilterBank));
+	bank->filters = (BiQuadFilter*) malloc(num_filters * sizeof(BiQuadFilter));
+	for(int i = 0; i<num_filters; i++){
+		bank->filters[i].enabled = false;
+	}
+	bank->size = num_filters;
+	bank->index = 0;
+
+	return bank;
+}
 
 /**
-   Load a new sample and return it.
+   Load a new filter list and return it.
 
    Since this is of course not a real-time safe action, this is called in the
    worker thread only.  The sample is loaded and returned only, plugin state is
    not modified.
  */
-static Sample*
-load_sample(FeedbackSuppressor* self, const char* path)
-{
+static FilterList*
+load_filter_list(FeedbackSuppressor *self, const char *path) {
 	const size_t path_len  = strlen(path);
+	lv2_log_trace(&self->logger, "Loading filter list %s\n", path);
 
-	lv2_log_trace(&self->logger, "Loading sample %s\n", path);
+	FilterList* const  list  = (FilterList*)malloc(sizeof(FilterList));
 
-	Sample* const  sample  = (Sample*)malloc(sizeof(Sample));
-	SF_INFO* const info    = &sample->info;
-	SNDFILE* const sndfile = sf_open(path, SFM_READ, info);
 
-	if (!sndfile || !info->frames || (info->channels != 1)) {
-		lv2_log_error(&self->logger, "Failed to open sample '%s'\n", path);
-		free(sample);
-		return NULL;
+	char line[50];
+	//parse the file to load a filter list
+	FILE *list_file;
+	list_file = fopen(path,"rt");
+	int i = 0;
+	if(list_file != NULL) {
+		while(fgets(line,50,list_file)) {
+			//convert the line to a float
+			if(i==MAX_BANK_SIZE) break;
+			list->notch_fcs[i] = atof(line);
+		}
 	}
 
-	// Read data
-	float* const data = malloc(sizeof(float) * info->frames);
-	if (!data) {
-		lv2_log_error(&self->logger, "Failed to allocate memory for sample\n");
-		return NULL;
-	}
-	sf_seek(sndfile, 0ul, SEEK_SET);
-	sf_read_float(sndfile, data, info->frames);
-	sf_close(sndfile);
+	list->list_len = i+1;
+	list->path     = (char*)malloc(path_len + 1);
+	list->path_len = path_len;
+	memcpy(list->path, path, path_len + 1);
 
-	// Fill sample struct and return it
-	sample->data     = data;
-	sample->path     = (char*)malloc(path_len + 1);
-	sample->path_len = path_len;
-	memcpy(sample->path, path, path_len + 1);
+	return list;
 
-	return sample;
+
 }
 
-/**
- * Load a new filter list
- */
-// do some stuff
-
-static void
-free_sample(FeedbackSuppressor* self, Sample* sample)
-{
-	if (sample) {
-		lv2_log_trace(&self->logger, "Freeing %s\n", sample->path);
-		free(sample->path);
-		free(sample->data);
-		free(sample);
-	}
-}
 
 /**
  * Free a filter list
  */
+static void
+free_filter_list(FeedbackSuppressor* self, FilterList* list)
+{
+	if (list) {
+		lv2_log_trace(&self->logger, "Freeing %s\n", list->path);
+		free(list->path);
+		free(list->notch_fcs);
+		free(list);
+	}
+}
 
 /**
    Do work in a non-realtime thread.
@@ -188,12 +191,12 @@ work(LV2_Handle                  instance,
 {
 	FeedbackSuppressor*        self = (FeedbackSuppressor*)instance;
 	const LV2_Atom* atom = (const LV2_Atom*)data;
-	if (atom->type == self->uris.eg_freeSample) {
-		// Free old sample
-		const SampleMessage* msg = (const SampleMessage*)data;
-		free_sample(self, msg->sample);
+	if (atom->type == self->uris.freeFilterList) {
+		// Free old filter list
+		const FilterListMessage* msg = (const FilterListMessage*)data;
+		free_filter_list(self, msg->list);
 	} else {
-		// Handle set message (load sample).
+		// Handle set message (load filter list).
 		const LV2_Atom_Object* obj = (const LV2_Atom_Object*)data;
 
 		// Get file path from message
@@ -202,11 +205,11 @@ work(LV2_Handle                  instance,
 			return LV2_WORKER_ERR_UNKNOWN;
 		}
 
-		// Load sample.
-		Sample* sample = load_sample(self, LV2_ATOM_BODY_CONST(file_path));
-		if (sample) {
-			// Loaded sample, send it to run() to be applied.
-			respond(handle, sizeof(sample), &sample);
+		//load the filter list
+		FilterList *list = load_filter_list(self,LV2_ATOM_BODY_CONST(file_path));
+		// Loaded filter list, send it to run() to be applied.
+		if (list) {
+			respond(handle, sizeof(list), &list);
 		}
 	}
 
@@ -227,20 +230,20 @@ work_response(LV2_Handle  instance,
 {
 	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 
-	SampleMessage msg = { { sizeof(Sample*), self->uris.eg_freeSample },
-			self->sample };
+	FilterListMessage msg = { { sizeof(FilterList*), self->uris.freeFilterList },
+			self->filter_list };
 
-	// Send a message to the worker to free the current sample
+	// Send a message to the worker to free the current filter list
 	self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
 
-	// Install the new sample
-	self->sample = *(Sample*const*)data;
+	// Install the new filter list
+	self->filter_list = *(FilterList*const*)data;
 
 	// Send a notification that we're using a new sample.
 	lv2_atom_forge_frame_time(&self->forge, 0);
 	write_set_file(&self->forge, &self->uris,
-			self->sample->path,
-			self->sample->path_len);
+			self->filter_list->path,
+			self->filter_list->path_len);
 
 	return LV2_WORKER_SUCCESS;
 }
@@ -300,6 +303,9 @@ instantiate(const LV2_Descriptor*     descriptor,
 		goto fail;
 	}
 
+	//init filter bank
+	init_filter_bank(self,DEFAULT_BANK_SIZE);
+
 	// Map URIs and initialise forge/logger
 	map_sampler_uris(self->map, &self->uris);
 	lv2_atom_forge_init(&self->forge, self->map);
@@ -316,7 +322,7 @@ static void
 cleanup(LV2_Handle instance)
 {
 	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
-	free_sample(self, self->sample);
+	free_filter_list(self, self->filter_list);
 	free(self);
 }
 
@@ -340,7 +346,19 @@ run(LV2_Handle instance,
 
 	// Read incoming events
 	LV2_ATOM_SEQUENCE_FOREACH(self->control_port, ev) {
-		//do nothing for now
+		if (is_object_type(uris, ev->body.type)) {
+					const LV2_Atom_Object* obj = (const LV2_Atom_Object*)&ev->body;
+					if (obj->body.otype == uris->patch_Set) {
+						// Received a set message, send it to the worker.
+						lv2_log_trace(&self->logger, "Queueing set message\n");
+						self->schedule->schedule_work(self->schedule->handle,
+						                              lv2_atom_total_size(&ev->body),
+						                              &ev->body);
+					} else {
+						lv2_log_trace(&self->logger,
+						              "Unknown object type %d\n", obj->body.otype);
+					}
+		}
 	}
 
 	// Add zeros to end if sample not long enough (or not playing)
@@ -357,7 +375,7 @@ save(LV2_Handle                instance,
 		const LV2_Feature* const* features)
 {
 	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
-	if (!self->sample) {
+	if (!self->filter_list) {
 		return LV2_STATE_SUCCESS;
 	}
 
@@ -368,12 +386,12 @@ save(LV2_Handle                instance,
 		}
 	}
 
-	char* apath = map_path->abstract_path(map_path->handle, self->sample->path);
+	char* apath = map_path->abstract_path(map_path->handle, self->filter_list->path);
 
 	store(handle,
-			self->uris.eg_sample,
+			self->uris.filterList,
 			apath,
-			strlen(self->sample->path) + 1,
+			strlen(self->filter_list->path) + 1,
 			self->uris.atom_Path,
 			LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE);
 
@@ -397,14 +415,14 @@ restore(LV2_Handle                  instance,
 
 	const void* value = retrieve(
 			handle,
-			self->uris.eg_sample,
+			self->uris.filterList,
 			&size, &type, &valflags);
 
 	if (value) {
 		const char* path = (const char*)value;
 		lv2_log_trace(&self->logger, "Restoring file %s\n", path);
-		free_sample(self, self->sample);
-		self->sample = load_sample(self, path);
+		free_filter_list(self, self->filter_list);
+		self->filter_list = load_filter_list(self, path);
 	}
 
 	return LV2_STATE_SUCCESS;

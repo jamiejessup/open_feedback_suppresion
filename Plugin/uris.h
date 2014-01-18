@@ -23,9 +23,9 @@
 #include "lv2/lv2plug.in/ns/ext/state/state.h"
 
 #define FS_URI          "http://jamiejessup.com/open_feedback_suppressor"
-#define FS__sample      FS_URI "#sample"
-#define FS__applySample FS_URI "#applySample"
-#define FS__freeSample  FS_URI "#freeSample"
+#define FS__filterList      FS_URI "#sample"
+#define FS__applyFilterList FS_URI "#applyFilterList"
+#define FS__freeFilterList  FS_URI "#freeFilterList"
 
 typedef struct {
 	LV2_URID atom_Blank;
@@ -34,9 +34,9 @@ typedef struct {
 	LV2_URID atom_Sequence;
 	LV2_URID atom_URID;
 	LV2_URID atom_eventTransfer;
-	LV2_URID eg_applySample;
-	LV2_URID eg_sample;
-	LV2_URID eg_freeSample;
+	LV2_URID applyFilterList;
+	LV2_URID filterList;
+	LV2_URID freeFilterList;
 	LV2_URID midi_Event;
 	LV2_URID patch_Set;
 	LV2_URID patch_property;
@@ -52,9 +52,9 @@ map_sampler_uris(LV2_URID_Map* map, FeedbackSuppressorURIs* uris)
 	uris->atom_Sequence      = map->map(map->handle, LV2_ATOM__Sequence);
 	uris->atom_URID          = map->map(map->handle, LV2_ATOM__URID);
 	uris->atom_eventTransfer = map->map(map->handle, LV2_ATOM__eventTransfer);
-	uris->eg_applySample     = map->map(map->handle, FS__applySample);
-	uris->eg_freeSample      = map->map(map->handle, FS__freeSample);
-	uris->eg_sample          = map->map(map->handle, FS__sample);
+	uris->applyFilterList     = map->map(map->handle, FS__applyFilterList);
+	uris->freeFilterList      = map->map(map->handle, FS__freeFilterList);
+	uris->filterList          = map->map(map->handle, FS__filterList);
 	uris->midi_Event         = map->map(map->handle, LV2_MIDI__MidiEvent);
 	uris->patch_Set          = map->map(map->handle, LV2_PATCH__Set);
 	uris->patch_property     = map->map(map->handle, LV2_PATCH__property);
@@ -86,7 +86,7 @@ write_set_file(LV2_Atom_Forge*    forge,
 		forge, &frame, 1, uris->patch_Set);
 
 	lv2_atom_forge_property_head(forge, uris->patch_property, 0);
-	lv2_atom_forge_urid(forge, uris->eg_sample);
+	lv2_atom_forge_urid(forge, uris->filterList);
 	lv2_atom_forge_property_head(forge, uris->patch_value, 0);
 	lv2_atom_forge_path(forge, filename, filename_len);
 
@@ -120,7 +120,7 @@ read_set_file(const FeedbackSuppressorURIs*     uris,
 	} else if (property->type != uris->atom_URID) {
 		fprintf(stderr, "Malformed set message has non-URID property.\n");
 		return NULL;
-	} else if (((const LV2_Atom_URID*)property)->body != uris->eg_sample) {
+	} else if (((const LV2_Atom_URID*)property)->body != uris->filterList) {
 		fprintf(stderr, "Set message for unknown property.\n");
 		return NULL;
 	}
