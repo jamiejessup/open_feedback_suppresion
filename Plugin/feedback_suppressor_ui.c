@@ -34,7 +34,7 @@ typedef struct {
 	LV2_Atom_Forge forge;
 
 	LV2_URID_Map* map;
-	SamplerURIs   uris;
+	FeedbackSuppressorURIs   uris;
 
 	LV2UI_Write_Function write;
 	LV2UI_Controller     controller;
@@ -52,13 +52,16 @@ on_load_clicked(GtkWidget* widget,
 
 	/* Create a dialog to select a sample file. */
 	GtkWidget* dialog = gtk_file_chooser_dialog_new(
-		"Load Sample",
+		"Load Filter List",
 		NULL,
 		GTK_FILE_CHOOSER_ACTION_OPEN,
 		GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
 		GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
 		NULL);
-
+	GtkFileFilter *filter = gtk_file_filter_new();
+	gtk_file_filter_add_pattern(filter,"*.ofs");
+	gtk_file_filter_set_name(filter,"Filter Lists");
+	gtk_file_chooser_add_filter(dialog,filter);
 	/* Run the dialog, and return if it is cancelled. */
 	if (gtk_dialog_run(GTK_DIALOG(dialog)) != GTK_RESPONSE_ACCEPT) {
 		gtk_widget_destroy(dialog);

@@ -41,10 +41,10 @@ typedef struct {
 	LV2_URID patch_Set;
 	LV2_URID patch_property;
 	LV2_URID patch_value;
-} SamplerURIs;
+} FeedbackSuppressorURIs;
 
 static inline void
-map_sampler_uris(LV2_URID_Map* map, SamplerURIs* uris)
+map_sampler_uris(LV2_URID_Map* map, FeedbackSuppressorURIs* uris)
 {
 	uris->atom_Blank         = map->map(map->handle, LV2_ATOM__Blank);
 	uris->atom_Path          = map->map(map->handle, LV2_ATOM__Path);
@@ -62,7 +62,7 @@ map_sampler_uris(LV2_URID_Map* map, SamplerURIs* uris)
 }
 
 static inline bool
-is_object_type(const SamplerURIs* uris, LV2_URID type)
+is_object_type(const FeedbackSuppressorURIs* uris, LV2_URID type)
 {
 	return type == uris->atom_Resource
 		|| type == uris->atom_Blank;
@@ -77,7 +77,7 @@ is_object_type(const SamplerURIs* uris, LV2_URID type)
  */
 static inline LV2_Atom*
 write_set_file(LV2_Atom_Forge*    forge,
-               const SamplerURIs* uris,
+               const FeedbackSuppressorURIs* uris,
                const char*        filename,
                const size_t       filename_len)
 {
@@ -103,7 +103,7 @@ write_set_file(LV2_Atom_Forge*    forge,
  *     patch:value </home/me/foo.wav> .
  */
 static inline const LV2_Atom*
-read_set_file(const SamplerURIs*     uris,
+read_set_file(const FeedbackSuppressorURIs*     uris,
               const LV2_Atom_Object* obj)
 {
 	if (obj->body.otype != uris->patch_Set) {

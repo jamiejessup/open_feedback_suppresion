@@ -15,7 +15,7 @@
   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-*/
+ */
 
 #include <math.h>
 #include <stdlib.h>
@@ -38,14 +38,15 @@
 #include "lv2/lv2plug.in/ns/lv2core/lv2.h"
 
 #include "./uris.h"
+#include "biquad_filter.h"
 
 enum {
-	SAMPLER_CONTROL = 0,
-	SAMPLER_NOTIFY  = 1,
-	SAMPLER_OUT     = 2
+	FS_CONTROL 	= 0,
+	FS_NOTIFY  	= 1,
+	FS_IN		= 2,
+	FS_OUT     	= 3
 };
 
-static const char* default_sample_file = "click.wav";
 
 typedef struct {
 	SF_INFO info;      // Info about sample from sndfile
@@ -55,10 +56,23 @@ typedef struct {
 } Sample;
 
 typedef struct {
+	int size;
+	int index;
+	BiQuadFilter *bank;
+} FilterBank;
+
+typedef struct {
+	char *path;
+	size_t path_len;
+	float *notch_fcs;
+	size_t *list_len;
+} FilterList;
+
+typedef struct {
 	// Features
 	LV2_URID_Map*        map;
 	LV2_Worker_Schedule* schedule;
-	LV2_Log_Log*         log;
+	LV2_Log_Log*     log;
 
 	// Forge for creating atoms
 	LV2_Atom_Forge forge;
@@ -73,20 +87,14 @@ typedef struct {
 	const LV2_Atom_Sequence* control_port;
 	LV2_Atom_Sequence*       notify_port;
 	float*                   output_port;
+	const float* input_port;
 
 	// Forge frame for notify port (for writing worker replies)
 	LV2_Atom_Forge_Frame notify_frame;
 
 	// URIs
-	SamplerURIs uris;
-
-	// Current position in run()
-	uint32_t frame_offset;
-
-	// Playback state
-	sf_count_t frame;
-	bool       play;
-} Sampler;
+	FeedbackSuppressorURIs uris;
+} FeedbackSuppressor;
 
 /**
    An atom-like message used internally to apply/free samples.
@@ -95,7 +103,7 @@ typedef struct {
    sent to the outside world via a port since it is not POD.  It is convenient
    to use an Atom header so actual atoms can be easily sent through the same
    ringbuffer.
-*/
+ */
 typedef struct {
 	LV2_Atom atom;
 	Sample*  sample;
@@ -107,9 +115,9 @@ typedef struct {
    Since this is of course not a real-time safe action, this is called in the
    worker thread only.  The sample is loaded and returned only, plugin state is
    not modified.
-*/
+ */
 static Sample*
-load_sample(Sampler* self, const char* path)
+load_sample(FeedbackSuppressor* self, const char* path)
 {
 	const size_t path_len  = strlen(path);
 
@@ -144,8 +152,13 @@ load_sample(Sampler* self, const char* path)
 	return sample;
 }
 
+/**
+ * Load a new filter list
+ */
+// do some stuff
+
 static void
-free_sample(Sampler* self, Sample* sample)
+free_sample(FeedbackSuppressor* self, Sample* sample)
 {
 	if (sample) {
 		lv2_log_trace(&self->logger, "Freeing %s\n", sample->path);
@@ -156,20 +169,24 @@ free_sample(Sampler* self, Sample* sample)
 }
 
 /**
+ * Free a filter list
+ */
+
+/**
    Do work in a non-realtime thread.
 
    This is called for every piece of work scheduled in the audio thread using
    self->schedule->schedule_work().  A reply can be sent back to the audio
    thread using the provided respond function.
-*/
+ */
 static LV2_Worker_Status
 work(LV2_Handle                  instance,
-     LV2_Worker_Respond_Function respond,
-     LV2_Worker_Respond_Handle   handle,
-     uint32_t                    size,
-     const void*                 data)
+		LV2_Worker_Respond_Function respond,
+		LV2_Worker_Respond_Handle   handle,
+		uint32_t                    size,
+		const void*                 data)
 {
-	Sampler*        self = (Sampler*)instance;
+	FeedbackSuppressor*        self = (FeedbackSuppressor*)instance;
 	const LV2_Atom* atom = (const LV2_Atom*)data;
 	if (atom->type == self->uris.eg_freeSample) {
 		// Free old sample
@@ -202,16 +219,16 @@ work(LV2_Handle                  instance,
    When running normally, this will be called by the host after run().  When
    freewheeling, this will be called immediately at the point the work was
    scheduled.
-*/
+ */
 static LV2_Worker_Status
 work_response(LV2_Handle  instance,
-              uint32_t    size,
-              const void* data)
+		uint32_t    size,
+		const void* data)
 {
-	Sampler* self = (Sampler*)instance;
+	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 
 	SampleMessage msg = { { sizeof(Sample*), self->uris.eg_freeSample },
-	                      self->sample };
+			self->sample };
 
 	// Send a message to the worker to free the current sample
 	self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
@@ -220,28 +237,31 @@ work_response(LV2_Handle  instance,
 	self->sample = *(Sample*const*)data;
 
 	// Send a notification that we're using a new sample.
-	lv2_atom_forge_frame_time(&self->forge, self->frame_offset);
+	lv2_atom_forge_frame_time(&self->forge, 0);
 	write_set_file(&self->forge, &self->uris,
-	               self->sample->path,
-	               self->sample->path_len);
+			self->sample->path,
+			self->sample->path_len);
 
 	return LV2_WORKER_SUCCESS;
 }
 
 static void
 connect_port(LV2_Handle instance,
-             uint32_t   port,
-             void*      data)
+		uint32_t   port,
+		void*      data)
 {
-	Sampler* self = (Sampler*)instance;
+	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 	switch (port) {
-	case SAMPLER_CONTROL:
+	case FS_CONTROL:
 		self->control_port = (const LV2_Atom_Sequence*)data;
 		break;
-	case SAMPLER_NOTIFY:
+	case FS_NOTIFY:
 		self->notify_port = (LV2_Atom_Sequence*)data;
 		break;
-	case SAMPLER_OUT:
+	case FS_IN:
+		self->input_port = (const float*)data;
+		break;
+	case FS_OUT:
 		self->output_port = (float*)data;
 		break;
 	default:
@@ -251,16 +271,16 @@ connect_port(LV2_Handle instance,
 
 static LV2_Handle
 instantiate(const LV2_Descriptor*     descriptor,
-            double                    rate,
-            const char*               path,
-            const LV2_Feature* const* features)
+		double                    rate,
+		const char*               path,
+		const LV2_Feature* const* features)
 {
 	// Allocate and initialise instance structure.
-	Sampler* self = (Sampler*)malloc(sizeof(Sampler));
+	FeedbackSuppressor* self = (FeedbackSuppressor*)malloc(sizeof(FeedbackSuppressor));
 	if (!self) {
 		return NULL;
 	}
-	memset(self, 0, sizeof(Sampler));
+	memset(self, 0, sizeof(FeedbackSuppressor));
 
 	// Get host features
 	for (int i = 0; features[i]; ++i) {
@@ -285,18 +305,9 @@ instantiate(const LV2_Descriptor*     descriptor,
 	lv2_atom_forge_init(&self->forge, self->map);
 	lv2_log_logger_init(&self->logger, self->map, self->log);
 
-	// Load the default sample file
-	const size_t path_len    = strlen(path);
-	const size_t file_len    = strlen(default_sample_file);
-	const size_t len         = path_len + file_len;
-	char*        sample_path = (char*)malloc(len + 1);
-	snprintf(sample_path, len + 1, "%s%s", path, default_sample_file);
-	self->sample = load_sample(self, sample_path);
-	free(sample_path);
-
 	return (LV2_Handle)self;
 
-fail:
+	fail:
 	free(self);
 	return 0;
 }
@@ -304,47 +315,48 @@ fail:
 static void
 cleanup(LV2_Handle instance)
 {
-	Sampler* self = (Sampler*)instance;
+	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 	free_sample(self, self->sample);
 	free(self);
 }
 
 static void
 run(LV2_Handle instance,
-    uint32_t   sample_count)
+		uint32_t   sample_count)
 {
-	Sampler*     self        = (Sampler*)instance;
-	SamplerURIs* uris        = &self->uris;
+	FeedbackSuppressor*     self        = (FeedbackSuppressor*)instance;
+	FeedbackSuppressorURIs* uris        = &self->uris;
+	const float* input		= self->input_port;
 	float*       output      = self->output_port;
 
 	// Set up forge to write directly to notify output port.
 	const uint32_t notify_capacity = self->notify_port->atom.size;
 	lv2_atom_forge_set_buffer(&self->forge,
-	                          (uint8_t*)self->notify_port,
-	                          notify_capacity);
+			(uint8_t*)self->notify_port,
+			notify_capacity);
 
 	// Start a sequence in the notify output port.
 	lv2_atom_forge_sequence_head(&self->forge, &self->notify_frame, 0);
 
 	// Read incoming events
 	LV2_ATOM_SEQUENCE_FOREACH(self->control_port, ev) {
-	  //do nothing for now
+		//do nothing for now
 	}
 
 	// Add zeros to end if sample not long enough (or not playing)
 	for (uint32_t pos = 0; pos < sample_count; ++pos) {
-		output[pos] = 0.0f;
+		output[pos] = input[pos];
 	}
 }
 
 static LV2_State_Status
 save(LV2_Handle                instance,
-     LV2_State_Store_Function  store,
-     LV2_State_Handle          handle,
-     uint32_t                  flags,
-     const LV2_Feature* const* features)
+		LV2_State_Store_Function  store,
+		LV2_State_Handle          handle,
+		uint32_t                  flags,
+		const LV2_Feature* const* features)
 {
-	Sampler* self = (Sampler*)instance;
+	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 	if (!self->sample) {
 		return LV2_STATE_SUCCESS;
 	}
@@ -359,11 +371,11 @@ save(LV2_Handle                instance,
 	char* apath = map_path->abstract_path(map_path->handle, self->sample->path);
 
 	store(handle,
-	      self->uris.eg_sample,
-	      apath,
-	      strlen(self->sample->path) + 1,
-	      self->uris.atom_Path,
-	      LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE);
+			self->uris.eg_sample,
+			apath,
+			strlen(self->sample->path) + 1,
+			self->uris.atom_Path,
+			LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE);
 
 	free(apath);
 
@@ -372,21 +384,21 @@ save(LV2_Handle                instance,
 
 static LV2_State_Status
 restore(LV2_Handle                  instance,
-        LV2_State_Retrieve_Function retrieve,
-        LV2_State_Handle            handle,
-        uint32_t                    flags,
-        const LV2_Feature* const*   features)
+		LV2_State_Retrieve_Function retrieve,
+		LV2_State_Handle            handle,
+		uint32_t                    flags,
+		const LV2_Feature* const*   features)
 {
-	Sampler* self = (Sampler*)instance;
+	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 
 	size_t   size;
 	uint32_t type;
 	uint32_t valflags;
 
 	const void* value = retrieve(
-		handle,
-		self->uris.eg_sample,
-		&size, &type, &valflags);
+			handle,
+			self->uris.eg_sample,
+			&size, &type, &valflags);
 
 	if (value) {
 		const char* path = (const char*)value;
@@ -412,14 +424,14 @@ extension_data(const char* uri)
 }
 
 static const LV2_Descriptor descriptor = {
-	FS_URI,
-	instantiate,
-	connect_port,
-	NULL,  // activate,
-	run,
-	NULL,  // deactivate,
-	cleanup,
-	extension_data
+		FS_URI,
+		instantiate,
+		connect_port,
+		NULL,  // activate,
+		run,
+		NULL,  // deactivate,
+		cleanup,
+		extension_data
 };
 
 LV2_SYMBOL_EXPORT
