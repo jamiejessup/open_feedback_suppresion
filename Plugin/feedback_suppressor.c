@@ -35,11 +35,14 @@
 #include "lv2/lv2plug.in/ns/ext/worker/worker.h"
 #include "lv2/lv2plug.in/ns/lv2core/lv2.h"
 
+#include <fftw3.h>
+
 #include "./uris.h"
 #include "biquad_filter.h"
 
 #define DEFAULT_BANK_SIZE 12
 #define MAX_BANK_SIZE 12
+#define DEFAULT_N 24*2048
 
 enum {
 	FS_CONTROL 	= 0,
@@ -47,14 +50,6 @@ enum {
 	FS_IN		= 2,
 	FS_OUT     	= 3
 };
-
-
-
-typedef struct {
-	int size; //max number of filters allowed in the bank
-	int index; //current number of filters
-	BiQuadFilter *filters;
-} FilterBank;
 
 typedef struct {
 	char *path;
@@ -83,6 +78,15 @@ typedef struct {
 	unsigned max_filters;
 	unsigned bank_index;
 
+	//stuff for the FFT I/O buffers
+	unsigned N;
+	unsigned sample_count;
+	double *fft_audio_in;
+	fftw_complex *fft_audio_out;
+	fftw_plan plan;
+	float *power_spectrum;
+	float *power_spectrum_db;
+
 	// Ports
 	const LV2_Atom_Sequence* control_port;
 	LV2_Atom_Sequence*       notify_port;
@@ -109,19 +113,6 @@ typedef struct {
 	LV2_Atom atom;
 	FilterList*  list;
 } FilterListMessage;
-
-static FilterBank*
-init_filter_bank(FeedbackSuppressor* self, int num_filters) {
-	FilterBank *bank = (FilterBank*)malloc(sizeof(FilterBank));
-	bank->filters = (BiQuadFilter*) malloc(num_filters * sizeof(BiQuadFilter));
-	for(int i = 0; i<num_filters; i++){
-		bank->filters[i].enabled = false;
-	}
-	bank->size = num_filters;
-	bank->index = 0;
-
-	return bank;
-}
 
 /**
    Load a new filter list and return it.
@@ -341,6 +332,15 @@ instantiate(const LV2_Descriptor*     descriptor,
 	lv2_atom_forge_init(&self->forge, self->map);
 	lv2_log_logger_init(&self->logger, self->map, self->log);
 
+	//init the FFT stuff
+	self->N = DEFAULT_N;
+	self->fft_audio_in = (double*) fftw_malloc(sizeof(double) * self->N);
+	self->fft_audio_out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * self->N);
+	self->plan = fftw_plan_dft_r2c_1d(self->N, self->fft_audio_in,
+			self->fft_audio_out, FFTW_ESTIMATE);
+	self->power_spectrum = (float*) malloc(self->N *sizeof(float));
+	self->power_spectrum_db = (float*) malloc(self->N *sizeof(float));
+
 	return (LV2_Handle)self;
 
 	fail:
@@ -353,6 +353,11 @@ cleanup(LV2_Handle instance)
 {
 	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 	free_filter_list(self, self->filter_list);
+	free(self->filter_bank);
+	fftw_free(self->fft_audio_in); fftw_free(self->fft_audio_out);
+    fftw_destroy_plan(self->plan);
+	free(self->power_spectrum);
+	free(self->power_spectrum_db);
 	free(self);
 }
 

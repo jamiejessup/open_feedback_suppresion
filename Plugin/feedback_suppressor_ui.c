@@ -59,6 +59,11 @@ on_load_clicked(GtkWidget* widget,
 		GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
 		NULL);
 
+	GtkFileFilter *filter = gtk_file_filter_new();
+	gtk_file_filter_set_name(filter, "Filter Lists");
+	gtk_file_filter_add_pattern(filter,"*.ofs");
+	gtk_file_chooser_add_filter((GtkFileChooser *) dialog,filter);
+
 	/* Run the dialog, and return if it is cancelled. */
 	if (gtk_dialog_run(GTK_DIALOG(dialog)) != GTK_RESPONSE_ACCEPT) {
 		gtk_widget_destroy(dialog);
@@ -68,7 +73,7 @@ on_load_clicked(GtkWidget* widget,
 	/* Get the file path from the dialog. */
 	char* filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
 
-	/* Got what we need, destroy the dialog. */
+	/* Got what we need, destroy the dialog and filter. */
 	gtk_widget_destroy(dialog);
 
 #define OBJ_BUF_SIZE 1024
@@ -111,7 +116,7 @@ instantiate(const LV2UI_Descriptor*   descriptor,
 	}
 
 	if (!ui->map) {
-		fprintf(stderr, "sampler_ui: Host does not support urid:Map\n");
+		fprintf(stderr, "feedback_suppressor_ui: Host does not support urid:Map\n");
 		free(ui);
 		return NULL;
 	}
@@ -121,7 +126,7 @@ instantiate(const LV2UI_Descriptor*   descriptor,
 	lv2_atom_forge_init(&ui->forge, ui->map);
 
 	ui->box = gtk_vbox_new(FALSE, 4);
-	ui->label = gtk_label_new("?");
+	ui->label = gtk_label_new("Select Filter List");
 	ui->button = gtk_button_new_with_label("Load Filter List");
 	gtk_box_pack_start(GTK_BOX(ui->box), ui->label, TRUE, TRUE, 4);
 	gtk_box_pack_start(GTK_BOX(ui->box), ui->button, FALSE, FALSE, 4);

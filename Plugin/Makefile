@@ -2,7 +2,7 @@ CC=gcc
 CFLAGS=-g -Wall -fPIC -std=c99 $(shell pkg-config --cflags gtk+-2.0)
 
 INCLUDES=
-LDFLAGS= $(shell pkg-config --libs gtk+-2.0) -shared
+LDFLAGS= $(shell pkg-config --libs gtk+-2.0) -shared -lfftw3
 
 DSPSOURCES=feedback_suppressor.c biquad_filter.c
 DSPOBJECTS = $(DSPSOURCES:.c=.o)
