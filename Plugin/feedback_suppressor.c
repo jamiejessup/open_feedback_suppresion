@@ -75,10 +75,13 @@ typedef struct {
 	// Logger convenience API
 	LV2_Log_Logger logger;
 
+	double sample_rate;
 	//Filter List
 	FilterList *filter_list;
 
-	FilterBank *filterBank;
+	BiQuadFilter *filter_bank;
+	unsigned max_filters;
+	unsigned bank_index;
 
 	// Ports
 	const LV2_Atom_Sequence* control_port;
@@ -242,7 +245,23 @@ work_response(LV2_Handle  instance,
 	// Install the new filter list
 	self->filter_list = *(FilterList*const*)data;
 
-	// Send a notification that we're using a new sample.
+	for(unsigned i = 0; i<self->max_filters; i++){
+		self->filter_bank[i].enabled = false;
+	}
+
+
+	// add the required notches from the list to filter bank
+#define DEFAULT_Q 50
+	int i=0;
+	for(; i<self->filter_list->list_len; i++){
+		if(i==MAX_BANK_SIZE) break;
+		addNotchFilterToBank(self->filter_bank,
+				self->filter_list->notch_fcs[i],self->sample_rate,i,50);
+	}
+	self->bank_index = i;
+
+
+	// Send a notification that we're using a new filter list.
 	lv2_atom_forge_frame_time(&self->forge, 0);
 	write_set_file(&self->forge, &self->uris,
 			self->filter_list->path,
@@ -306,8 +325,16 @@ instantiate(const LV2_Descriptor*     descriptor,
 		goto fail;
 	}
 
-	//init filter bank
-	init_filter_bank(self,DEFAULT_BANK_SIZE);
+	self->sample_rate = rate;
+
+	self->max_filters = DEFAULT_BANK_SIZE;
+
+	//allocate some memory for the filter bank
+	self->filter_bank = (BiQuadFilter*) malloc(self->max_filters *sizeof(BiQuadFilter));
+
+	for(unsigned i = 0; i<self->max_filters; i++){
+		self->filter_bank[i].enabled = false;
+	}
 
 	// Map URIs and initialise forge/logger
 	map_sampler_uris(self->map, &self->uris);
@@ -367,7 +394,7 @@ run(LV2_Handle instance,
 
 	// Add zeros to end if sample not long enough (or not playing)
 	for (uint32_t pos = 0; pos < sample_count; ++pos) {
-		output[pos] = input[pos];
+		output[pos] = processFilterBank(self->filter_bank,input[pos],self->max_filters);
 	}
 }
 
