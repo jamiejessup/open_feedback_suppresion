@@ -23,7 +23,7 @@
 #include "lv2/lv2plug.in/ns/ext/state/state.h"
 
 #define FS_URI          "http://jamiejessup.com/open_feedback_suppressor"
-#define FS__filterList      FS_URI "#sample"
+#define FS__filterList      FS_URI "#filterList"
 #define FS__applyFilterList FS_URI "#applyFilterList"
 #define FS__freeFilterList  FS_URI "#freeFilterList"
 

@@ -28,7 +28,7 @@
 
 #include "./uris.h"
 
-#define SAMPLER_UI_URI "http://jamiejessup.com/open_feedback_suppressor#ui"
+#define FS_UI_URI "http://jamiejessup.com/open_feedback_suppressor#ui"
 
 typedef struct {
 	LV2_Atom_Forge forge;
@@ -40,9 +40,8 @@ typedef struct {
 	LV2UI_Controller     controller;
 
 	GtkWidget* box;
-	GtkWidget* check_box;
-	//GtkWidget* label;
 	GtkWidget* button;
+	GtkWidget* label;
 } FeedbackSuppressorUI;
 
 static void
@@ -53,16 +52,13 @@ on_load_clicked(GtkWidget* widget,
 
 	/* Create a dialog to select a sample file. */
 	GtkWidget* dialog = gtk_file_chooser_dialog_new(
-		"Load Filter List",
+		"Load Sample",
 		NULL,
 		GTK_FILE_CHOOSER_ACTION_OPEN,
 		GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
 		GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
 		NULL);
-	GtkFileFilter *filter = gtk_file_filter_new();
-	gtk_file_filter_add_pattern(filter,"*.ofs");
-	gtk_file_filter_set_name(filter,"Filter Lists");
-	gtk_file_chooser_add_filter((GtkFileChooser*)dialog,filter);
+
 	/* Run the dialog, and return if it is cancelled. */
 	if (gtk_dialog_run(GTK_DIALOG(dialog)) != GTK_RESPONSE_ACCEPT) {
 		gtk_widget_destroy(dialog);
@@ -104,8 +100,7 @@ instantiate(const LV2UI_Descriptor*   descriptor,
 	ui->controller = controller;
 	ui->box        = NULL;
 	ui->button     = NULL;
-	ui->check_box   = NULL;
-	//ui->label = NULL;
+	ui->label      = NULL;
 
 	*widget = NULL;
 
@@ -126,11 +121,9 @@ instantiate(const LV2UI_Descriptor*   descriptor,
 	lv2_atom_forge_init(&ui->forge, ui->map);
 
 	ui->box = gtk_vbox_new(FALSE, 4);
-	ui->check_box = gtk_check_button_new_with_label("Enable Auto Suppression");
-	//ui->label = gtk_label_new("Select Filter List");
+	ui->label = gtk_label_new("?");
 	ui->button = gtk_button_new_with_label("Load Filter List");
-	gtk_box_pack_start(GTK_BOX(ui->box), ui->check_box, TRUE, TRUE, 4);
-	//gtk_box_pack_start(GTK_BOX(ui->box), ui->label, TRUE, TRUE, 4);
+	gtk_box_pack_start(GTK_BOX(ui->box), ui->label, TRUE, TRUE, 4);
 	gtk_box_pack_start(GTK_BOX(ui->box), ui->button, FALSE, FALSE, 4);
 	g_signal_connect(ui->button, "clicked",
 	                 G_CALLBACK(on_load_clicked),
@@ -146,7 +139,6 @@ cleanup(LV2UI_Handle handle)
 {
 	FeedbackSuppressorUI* ui = (FeedbackSuppressorUI*)handle;
 	gtk_widget_destroy(ui->button);
-	gtk_widget_destroy(ui->check_box);
 	free(ui);
 }
 
@@ -169,7 +161,7 @@ port_event(LV2UI_Handle handle,
 			}
 
 			const char* uri = (const char*)LV2_ATOM_BODY_CONST(file_uri);
-			//gtk_label_set_text(GTK_LABEL(ui->label), uri);
+			gtk_label_set_text(GTK_LABEL(ui->label), uri);
 		} else {
 			fprintf(stderr, "Unknown message type.\n");
 		}
@@ -185,7 +177,7 @@ extension_data(const char* uri)
 }
 
 static const LV2UI_Descriptor descriptor = {
-	SAMPLER_UI_URI,
+	FS_UI_URI,
 	instantiate,
 	cleanup,
 	port_event,

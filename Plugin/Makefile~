@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-g -Wall -fPIC -std=c99 $(shell pkg-config --cflags gtk+-2.0 sndfile)
+CFLAGS=-O3 -Wall -fPIC -std=c99 $(shell pkg-config --cflags gtk+-2.0 sndfile)
 
 INCLUDES=
 LDFLAGS= $(shell pkg-config --libs gtk+-2.0 sndfile) -shared

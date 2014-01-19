@@ -141,17 +141,22 @@ load_filter_list(FeedbackSuppressor *self, const char *path) {
 	//parse the file to load a filter list
 	FILE *list_file;
 	list_file = fopen(path,"rt");
+	float notches[MAX_BANK_SIZE];
 	int i = 0;
 	if(list_file != NULL) {
 		while(fgets(line,50,list_file)) {
 			//convert the line to a float
 			if(i==MAX_BANK_SIZE) break;
-			list->notch_fcs[i] = atof(line);
+			notches[i] = atof(line);
 		}
 	}
 
 	list->list_len = i+1;
 	list->path     = (char*)malloc(path_len + 1);
+	list->notch_fcs = (float*)malloc((i+1)*sizeof(float));
+	for(int j=0; j<i+1; j++){
+		list->notch_fcs[j] = notches[j];
+	}
 	list->path_len = path_len;
 	memcpy(list->path, path, path_len + 1);
 
@@ -344,20 +349,21 @@ run(LV2_Handle instance,
 	// Start a sequence in the notify output port.
 	lv2_atom_forge_sequence_head(&self->forge, &self->notify_frame, 0);
 
+
 	// Read incoming events
 	LV2_ATOM_SEQUENCE_FOREACH(self->control_port, ev) {
 		if (is_object_type(uris, ev->body.type)) {
-					const LV2_Atom_Object* obj = (const LV2_Atom_Object*)&ev->body;
-					if (obj->body.otype == uris->patch_Set) {
-						// Received a set message, send it to the worker.
-						lv2_log_trace(&self->logger, "Queueing set message\n");
-						self->schedule->schedule_work(self->schedule->handle,
-						                              lv2_atom_total_size(&ev->body),
-						                              &ev->body);
-					} else {
-						lv2_log_trace(&self->logger,
-						              "Unknown object type %d\n", obj->body.otype);
-					}
+			const LV2_Atom_Object* obj = (const LV2_Atom_Object*)&ev->body;
+			if (obj->body.otype == uris->patch_Set) {
+				// Received a set message, send it to the worker.
+				lv2_log_trace(&self->logger, "Queueing set message\n");
+				self->schedule->schedule_work(self->schedule->handle,
+						lv2_atom_total_size(&ev->body),
+						&ev->body);
+			} else {
+				lv2_log_trace(&self->logger,
+						"Unknown object type %d\n", obj->body.otype);
+			}
 		}
 	}
 
