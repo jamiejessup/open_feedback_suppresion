@@ -153,7 +153,7 @@ int Jack::process(jack_nframes_t nframes)
         jack_ringbuffer_read(filterUpdateBuffer,(char*)&fc,sizeof(float));
 
         if(filterIndex != MAX_FILTERS){
-            addNotchFilterToBank(filterBank,fc,sample_rate,filterIndex,100);
+            addNotchFilterToBank(filterBank,fc,sample_rate,filterIndex,25);
             filterIndex++;
             std::cout << fc << std::endl;
         }

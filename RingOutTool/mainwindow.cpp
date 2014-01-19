@@ -206,6 +206,7 @@ void MainWindow::on_addPeakButton_clicked()
 void MainWindow::on_removeButton_clicked()
 {
     qDeleteAll(ui->filterList->selectedItems());
+    //TODO: tell jack not to process that filter anymore
 }
 
 void MainWindow::on_saveButton_clicked()
