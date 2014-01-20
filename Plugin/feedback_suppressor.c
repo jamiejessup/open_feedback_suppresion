@@ -39,6 +39,7 @@
 
 #include "./uris.h"
 #include "biquad_filter.h"
+#include "hann_window.h"
 
 #define DEFAULT_BANK_SIZE 12
 #define MAX_BANK_SIZE 12
@@ -86,6 +87,8 @@ typedef struct {
 	fftw_plan plan;
 	float *power_spectrum;
 	float *power_spectrum_db;
+	bool executing_fft;
+	HannWindow *hann_window;
 
 	// Ports
 	const LV2_Atom_Sequence* control_port;
@@ -95,9 +98,12 @@ typedef struct {
 
 	// Forge frame for notify port (for writing worker replies)
 	LV2_Atom_Forge_Frame notify_frame;
+	// Forge frame for notify port (for writing data to the worker)
+	LV2_Atom_Forge_Frame audio_frame;
 
 	// URIs
 	FeedbackSuppressorURIs uris;
+
 } FeedbackSuppressor;
 
 
@@ -113,6 +119,32 @@ typedef struct {
 	LV2_Atom atom;
 	FilterList*  list;
 } FilterListMessage;
+
+
+
+typedef struct {
+	float *sample;
+	size_t samples;
+} FFTAudio;
+
+
+/**
+   An atom-like message used internally to send audio to the worker for spectrum analysis.
+
+   This is only used internally to communicate with the worker, it is never
+   sent to the outside world via a port since it is not POD.  It is convenient
+   to use an Atom header so actual atoms can be easily sent through the same
+   ringbuffer.
+ */
+typedef struct {
+	LV2_Atom atom;
+	bool execute;
+} FFTAudioMessage;
+
+typedef struct {
+	LV2_Atom atom;
+	void *data;
+} WorkerMessage;
 
 /**
    Load a new filter list and return it.
@@ -192,6 +224,49 @@ work(LV2_Handle                  instance,
 		// Free old filter list
 		const FilterListMessage* msg = (const FilterListMessage*)data;
 		free_filter_list(self, msg->list);
+	} else if(atom->type == self->uris.fftAudio) {
+		printf("got scheduled for FFT\n");
+		//window input signal
+
+		for(int i=0; i<self->N; i++){
+			self->fft_audio_in[i] = self->fft_audio_in[i]*self->hann_window->w[i];
+		}
+
+		//do the fft of input
+		fftw_execute(self->plan);
+		//normalize fft result
+		for (int i = 0; i < (self->N+1)/2; i++) {
+			self->fft_audio_out[i][0] /= self->N; self->fft_audio_out[i][1] /= self->N;
+		}
+
+		//calculate power spectral density
+
+		// (k < N/2 rounded up)
+		for (int i = 0; i < (self->N+1)/2; i++) {
+			self->power_spectrum[i] = self->fft_audio_out[i][0]*self->fft_audio_out[i][0] + self->fft_audio_out[i][1]*self->fft_audio_out[i][1];
+			if(self->power_spectrum[i] == 0)
+				self->power_spectrum_db[i] = -120;
+			else
+				self->power_spectrum_db[i] = 10*log10(self->power_spectrum[i]);
+		}
+
+		// N is even
+		if (self->N % 2 == 0) {
+			self->power_spectrum[self->N/2] = self->fft_audio_out[self->N/2][0]*self->fft_audio_out[self->N/2][0] + self->fft_audio_out[self->N/2][1]*self->fft_audio_out[self->N/2][1];
+			if(self->power_spectrum[self->N/2] == 0)
+				self->power_spectrum_db[self->N/2] = -120;
+			else
+				self->power_spectrum_db[self->N/2] = 10*log10(self->power_spectrum[self->N/2]);
+		}
+
+		printf("PSD Calculation Complete\n");
+
+		FFTAudioMessage msg = { { sizeof(bool), self->uris.fftAudio },
+						true };
+		respond(handle, sizeof(msg), &msg);
+
+
+
 	} else {
 		// Handle set message (load filter list).
 		const LV2_Atom_Object* obj = (const LV2_Atom_Object*)data;
@@ -204,9 +279,11 @@ work(LV2_Handle                  instance,
 
 		//load the filter list
 		FilterList *list = load_filter_list(self,LV2_ATOM_BODY_CONST(file_path));
+		FilterListMessage msg = { { sizeof(FilterList*), self->uris.applyFilterList },
+				list };
 		// Loaded filter list, send it to run() to be applied.
 		if (list) {
-			respond(handle, sizeof(list), &list);
+			respond(handle, sizeof(msg), &msg);
 		}
 	}
 
@@ -227,36 +304,47 @@ work_response(LV2_Handle  instance,
 {
 	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 
-	FilterListMessage msg = { { sizeof(FilterList*), self->uris.freeFilterList },
-			self->filter_list };
+	const LV2_Atom* atom = (const LV2_Atom*)data;
+	if (atom->type == self->uris.applyFilterList) {
 
-	// Send a message to the worker to free the current filter list
-	self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
+		FilterListMessage msg = { { sizeof(FilterList*), self->uris.freeFilterList },
+				self->filter_list };
 
-	// Install the new filter list
-	self->filter_list = *(FilterList*const*)data;
-
-	for(unsigned i = 0; i<self->max_filters; i++){
-		self->filter_bank[i].enabled = false;
-	}
+		// Send a message to the worker to free the current filter list
+		self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
 
 
-	// add the required notches from the list to filter bank
+
+		// Install the new filter list
+		FilterListMessage *list_message = (FilterListMessage *) data;
+		self->filter_list = list_message->list;
+
+		for(unsigned i = 0; i<self->max_filters; i++){
+			self->filter_bank[i].enabled = false;
+		}
+
+
+		// add the required notches from the list to filter bank
 #define DEFAULT_Q 50
-	int i=0;
-	for(; i<self->filter_list->list_len; i++){
-		if(i==MAX_BANK_SIZE) break;
-		addNotchFilterToBank(self->filter_bank,
-				self->filter_list->notch_fcs[i],self->sample_rate,i,50);
+		int i=0;
+		for(; i<self->filter_list->list_len; i++){
+			if(i==MAX_BANK_SIZE) break;
+			addNotchFilterToBank(self->filter_bank,
+					self->filter_list->notch_fcs[i],self->sample_rate,i,50);
+		}
+		self->bank_index = i;
+
+
+		// Send a notification that we're using a new filter list.
+		lv2_atom_forge_frame_time(&self->forge, 0);
+		write_set_file(&self->forge, &self->uris,
+				self->filter_list->path,
+				self->filter_list->path_len);
+
+
+	} else if (atom->type == self->uris.fftAudio){
+		self->executing_fft = false;
 	}
-	self->bank_index = i;
-
-
-	// Send a notification that we're using a new filter list.
-	lv2_atom_forge_frame_time(&self->forge, 0);
-	write_set_file(&self->forge, &self->uris,
-			self->filter_list->path,
-			self->filter_list->path_len);
 
 	return LV2_WORKER_SUCCESS;
 }
@@ -340,6 +428,9 @@ instantiate(const LV2_Descriptor*     descriptor,
 			self->fft_audio_out, FFTW_ESTIMATE);
 	self->power_spectrum = (float*) malloc(self->N *sizeof(float));
 	self->power_spectrum_db = (float*) malloc(self->N *sizeof(float));
+	self->executing_fft = false;
+
+	self->hann_window = new_hann_window(self->N);
 
 	return (LV2_Handle)self;
 
@@ -355,9 +446,10 @@ cleanup(LV2_Handle instance)
 	free_filter_list(self, self->filter_list);
 	free(self->filter_bank);
 	fftw_free(self->fft_audio_in); fftw_free(self->fft_audio_out);
-    fftw_destroy_plan(self->plan);
+	fftw_destroy_plan(self->plan);
 	free(self->power_spectrum);
 	free(self->power_spectrum_db);
+	free(self->hann_window);
 	free(self);
 }
 
@@ -397,9 +489,33 @@ run(LV2_Handle instance,
 		}
 	}
 
-	// Add zeros to end if sample not long enough (or not playing)
+
+
+	// Send a message to the worker to process fft stuff
+	//self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
+
+
+	bool send_message = false;
+
+	//Do the required processing
 	for (uint32_t pos = 0; pos < sample_count; ++pos) {
 		output[pos] = processFilterBank(self->filter_bank,input[pos],self->max_filters);
+		if(!self->executing_fft){
+			//add the input to the fft Buffer
+			self->fft_audio_in[self->sample_count] = input[pos];
+			self->sample_count++;
+			if(self->sample_count >= self->N-1){
+				self->sample_count = 0;
+				self->executing_fft = true;
+				send_message = true;
+			}
+		}
+	}
+
+	if(send_message) {
+		FFTAudioMessage msg = { { sizeof(bool), self->uris.fftAudio },
+				true };
+		self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
 	}
 }
 
