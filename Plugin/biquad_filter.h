@@ -22,6 +22,7 @@ typedef struct biQuadFilt{
     float x[3];
     float alpha;
     float q;
+    float gain;
 } BiQuadFilter;
 
 float processFilter(BiQuadFilter *filter, float input);

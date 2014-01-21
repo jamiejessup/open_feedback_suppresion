@@ -146,6 +146,44 @@ typedef struct {
 	void *data;
 } WorkerMessage;
 
+static unsigned
+get_max_bin(float* spectrum_db, unsigned N){
+	unsigned index;
+	float max = spectrum_db[0];
+	for(unsigned i = 1; i<N; i++){
+		if(spectrum_db[i] > max){
+			max = spectrum_db[i]; index =i;
+		}
+	}
+	return index;
+}
+
+static float
+peak_to_harmonic_power_ratio(float f, float fs, float* spectrum_db, int n_harmonic, unsigned N){
+	int bin = (int) (f/fs) * N;
+	int bin2 = (int) (n_harmonic*f/fs) * N;
+
+	//return difference ratio in dB of power difference at each bin
+	return spectrum_db[bin] - spectrum_db[bin2];
+}
+
+
+static float
+peak_to_neighbour_power_ratio(float f, float fs, float* spectrum_db, int n_bin, unsigned N){
+	int bin = (int) (f/fs) * N;
+
+	//return difference ratio in dB of power difference at each bin
+	return spectrum_db[bin] - spectrum_db[bin+n_bin];
+}
+
+
+static bool
+detect_feedback(float f, float fs, float* spectrum_db,unsigned N){
+	return
+			(peak_to_harmonic_power_ratio(f,fs,spectrum_db,3,N) > -30) &&
+			(peak_to_neighbour_power_ratio(f,fs,spectrum_db,5,N) > -10);
+}
+
 /**
    Load a new filter list and return it.
 
@@ -225,7 +263,6 @@ work(LV2_Handle                  instance,
 		const FilterListMessage* msg = (const FilterListMessage*)data;
 		free_filter_list(self, msg->list);
 	} else if(atom->type == self->uris.fftAudio) {
-		printf("got scheduled for FFT\n");
 		//window input signal
 
 		for(int i=0; i<self->N; i++){
@@ -259,7 +296,13 @@ work(LV2_Handle                  instance,
 				self->power_spectrum_db[self->N/2] = 10*log10(self->power_spectrum[self->N/2]);
 		}
 
-		printf("PSD Calculation Complete\n");
+
+		//get the max power bin
+		unsigned max_bin = get_max_bin(self->power_spectrum_db, self->N);
+		float max_power_freq = max_bin*self->sample_rate/(float)self->N;
+
+		if(detect_feedback(max_power_freq,self->sample_rate,self->power_spectrum_db,self->N))
+			printf("Feedback Detected at %f\n",max_power_freq);
 
 		FFTAudioMessage msg = { { sizeof(bool), self->uris.fftAudio },
 						true };
@@ -428,6 +471,10 @@ instantiate(const LV2_Descriptor*     descriptor,
 			self->fft_audio_out, FFTW_ESTIMATE);
 	self->power_spectrum = (float*) malloc(self->N *sizeof(float));
 	self->power_spectrum_db = (float*) malloc(self->N *sizeof(float));
+	for(int i=0; i<self->N; i++){
+		self->power_spectrum[i] = 0;
+		self->power_spectrum_db[i] = -200;
+	}
 	self->executing_fft = false;
 
 	self->hann_window = new_hann_window(self->N);
