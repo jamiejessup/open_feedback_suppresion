@@ -1,22 +1,20 @@
 /*
-  LV2 Sampler Example Plugin
-  Copyright 2011-2012 David Robillard <d@drobilla.net>
-  Copyright 2011 Gabriel M. Beddingfield <gabriel@teuton.org>
-  Copyright 2011 James Morris <jwm.art.net@gmail.com>
-
-  Permission to use, copy, modify, and/or distribute this software for any
-  purpose with or without fee is hereby granted, provided that the above
-  copyright notice and this permission notice appear in all copies.
-
-  THIS SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-  WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-  MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-  ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-  WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-  ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Author: Jamie Jessup 2013
+ *         jessup.jamie@gmail.com
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -327,7 +325,9 @@ work(LV2_Handle                  instance,
 		if(detect_feedback(max_power_freq,self->sample_rate,self->power_spectrum_db,self->N)) {
 			printf("Feedback Detected at %f\n",max_power_freq);
 		}
-		 */
+		*/
+
+
 
 		//get a new message to send to run() to apply new auto filter properties
 		DetectionResultsMessage msg;
@@ -347,6 +347,7 @@ work(LV2_Handle                  instance,
 			}
 		}
 
+
 		unsigned max_bin = get_max_bin(self->power_spectrum_db, self->N);
 		float max_power_freq = max_bin*self->sample_rate/(float)self->N;
 
@@ -354,7 +355,7 @@ work(LV2_Handle                  instance,
 			printf("Feedback Detected at %f\n",max_power_freq);
 			msg.new_fc = max_power_freq;
 		} else
-			max_power_freq = 0;
+			msg.new_fc = 0;
 
 		respond(handle, sizeof(msg), &msg);
 
@@ -435,7 +436,40 @@ work_response(LV2_Handle  instance,
 
 	} else if (atom->type == self->uris.detectionResults){
 
-		printf("Hello!\n");
+		// get the results of the detection
+		DetectionResultsMessage *drm = (DetectionResultsMessage *) data;
+		// update filter coefficients if necessary
+		for(int i=0; i<self->max_auto_filters; i++){
+			if(self->auto_filter_bank[i].enabled){
+				//if an existing filter still has feedback cut the gain -3dB
+				if(drm->cuts[i]){
+					newFilterGain(self->auto_filter_bank,i,self->auto_filter_bank[i].gain - 3);
+				} else {
+					//if an existing auto doesn't have feedback anymore, move the gain up or even disable it
+					if(self->auto_filter_bank[i].gain >= -3){
+						self->auto_filter_bank[i].enabled = false;
+					} else
+						newFilterGain(self->auto_filter_bank,i,self->auto_filter_bank[i].gain + 3);
+				}
+			}
+		}
+
+		//if there is a new feedback frequency present add a new filter
+		if(drm->new_fc != 0){
+			//see if we have any available filters and get the first one
+			//printf("Feedback Detected at %f\n", drm->new_fc);
+			int index =-1;
+			for(int i=0; i<self->max_auto_filters; i++){
+				index = i;
+				if(self->auto_filter_bank[i].enabled == false) break;
+			}
+
+			//set up a new filter if one is available
+			if(index>-1){
+				addFilterToBank(self->auto_filter_bank,drm->new_fc,self->sample_rate,index,-3,50);
+			}
+		}
+
 		self->executing_fft = false;
 
 	}
@@ -602,7 +636,8 @@ run(LV2_Handle instance,
 
 	//Do the required processing
 	for (uint32_t pos = 0; pos < sample_count; ++pos) {
-		output[pos] = processFilterBank(self->static_filter_bank,input[pos],self->max_static_filters);
+		float temp_output = processFilterBank(self->static_filter_bank,input[pos],self->max_static_filters);
+		output[pos] = processFilterBank(self->auto_filter_bank,temp_output,self->max_static_filters);
 		if(!self->executing_fft){
 			//add the input to the fft Buffer
 			self->fft_audio_in[self->sample_count] = input[pos];

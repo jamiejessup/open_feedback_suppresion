@@ -1,8 +1,19 @@
 /*
- * hann_window.h
+ * Author: Jamie Jessup 2013
+ *         jessup.jamie@gmail.com
  *
- *  Created on: Jan 19, 2014
- *      Author: jamie
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef HANN_WINDOW_H_
@@ -13,11 +24,21 @@
 
 #define PI 3.14159265358979323846264338327
 
+/**
+ * A simple structure containing the length
+ * and cefficients of a hann window
+ */
 typedef struct {
 	int N;
 	float *w;
 } HannWindow;
 
+/**
+ * Generate a hann window on the heap
+ *
+ * And return a pointer to the generated window
+ *
+ */
 HannWindow *new_hann_window(int N) {
 	HannWindow * hw = (HannWindow *) malloc(sizeof(HannWindow));
 	hw->N = N;
