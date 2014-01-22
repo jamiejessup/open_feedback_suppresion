@@ -75,9 +75,11 @@ typedef struct {
 	//Filter List
 	FilterList *filter_list;
 
-	BiQuadFilter *filter_bank;
-	unsigned max_filters;
-	unsigned bank_index;
+	BiQuadFilter *static_filter_bank;
+	unsigned max_static_filters;
+
+	BiQuadFilter *auto_filter_bank;
+	unsigned max_auto_filters;
 
 	//stuff for the FFT I/O buffers
 	unsigned N;
@@ -121,15 +123,24 @@ typedef struct {
 } FilterListMessage;
 
 
+/**
+   An atom-like message used internally to send a message to increase or decrease gain
+   of peaking eq filters for automatic suppression
 
+   This is only used internally to communicate with the worker, it is never
+   sent to the outside world via a port since it is not POD.  It is convenient
+   to use an Atom header so actual atoms can be easily sent through the same
+   ringbuffer.
+ */
 typedef struct {
-	float *sample;
-	size_t samples;
-} FFTAudio;
+	float *fc;
+	bool cut;
+} FeedbackFreqMessage;
 
 
 /**
-   An atom-like message used internally to send audio to the worker for spectrum analysis.
+   An atom-like message used internally to send a message to the worker to execute an FFT and
+   do analysis of feedback frequencies
 
    This is only used internally to communicate with the worker, it is never
    sent to the outside world via a port since it is not POD.  It is convenient
@@ -139,7 +150,19 @@ typedef struct {
 typedef struct {
 	LV2_Atom atom;
 	bool execute;
-} FFTAudioMessage;
+} FFTExecuteMessage;
+
+typedef struct {
+	bool *cuts;
+	float new_fc;
+	size_t length;
+} DetectionResults;
+
+typedef struct {
+	LV2_Atom atom;
+	bool cuts[DEFAULT_BANK_SIZE];
+	float new_fc;
+} DetectionResultsMessage;
 
 typedef struct {
 	LV2_Atom atom;
@@ -179,9 +202,11 @@ peak_to_neighbour_power_ratio(float f, float fs, float* spectrum_db, int n_bin, 
 
 static bool
 detect_feedback(float f, float fs, float* spectrum_db,unsigned N){
+#define DEFAULT_T_PHPR -30
+#define DEFAULT_T_PNPR -10
 	return
-			(peak_to_harmonic_power_ratio(f,fs,spectrum_db,3,N) > -30) &&
-			(peak_to_neighbour_power_ratio(f,fs,spectrum_db,5,N) > -10);
+			(peak_to_harmonic_power_ratio(f,fs,spectrum_db,3,N) > DEFAULT_T_PHPR) &&
+			(peak_to_neighbour_power_ratio(f,fs,spectrum_db,5,N) > DEFAULT_T_PNPR);
 }
 
 /**
@@ -262,7 +287,7 @@ work(LV2_Handle                  instance,
 		// Free old filter list
 		const FilterListMessage* msg = (const FilterListMessage*)data;
 		free_filter_list(self, msg->list);
-	} else if(atom->type == self->uris.fftAudio) {
+	} else if(atom->type == self->uris.fftExecute) {
 		//window input signal
 
 		for(int i=0; i<self->N; i++){
@@ -296,16 +321,41 @@ work(LV2_Handle                  instance,
 				self->power_spectrum_db[self->N/2] = 10*log10(self->power_spectrum[self->N/2]);
 		}
 
+		/*
+		unsigned max_bin = get_max_bin(self->power_spectrum_db, self->N);
+		float max_power_freq = max_bin*self->sample_rate/(float)self->N;
+		if(detect_feedback(max_power_freq,self->sample_rate,self->power_spectrum_db,self->N)) {
+			printf("Feedback Detected at %f\n",max_power_freq);
+		}
+		 */
 
-		//get the max power bin
+		//get a new message to send to run() to apply new auto filter properties
+		DetectionResultsMessage msg;
+		msg.atom.size = DEFAULT_BANK_SIZE*sizeof(bool) + sizeof(float);
+		msg.atom.type = self->uris.detectionResults;
+
+		//do check if spectrum dictates there is feedback at previously identified feedback
+		//frequencies
+		for(int i=0; i<self->max_auto_filters; i++){
+			if(self->auto_filter_bank[i].enabled){
+				//if its enabled, check for feedback
+				if(detect_feedback(self->auto_filter_bank[i].fc,self->sample_rate,self->power_spectrum_db,self->N)) {
+					msg.cuts[i] = true;
+				} else {
+					msg.cuts[i] = false;
+				}
+			}
+		}
+
 		unsigned max_bin = get_max_bin(self->power_spectrum_db, self->N);
 		float max_power_freq = max_bin*self->sample_rate/(float)self->N;
 
-		if(detect_feedback(max_power_freq,self->sample_rate,self->power_spectrum_db,self->N))
+		if(detect_feedback(max_power_freq,self->sample_rate,self->power_spectrum_db,self->N)) {
 			printf("Feedback Detected at %f\n",max_power_freq);
+			msg.new_fc = max_power_freq;
+		} else
+			max_power_freq = 0;
 
-		FFTAudioMessage msg = { { sizeof(bool), self->uris.fftAudio },
-						true };
 		respond(handle, sizeof(msg), &msg);
 
 
@@ -362,20 +412,18 @@ work_response(LV2_Handle  instance,
 		FilterListMessage *list_message = (FilterListMessage *) data;
 		self->filter_list = list_message->list;
 
-		for(unsigned i = 0; i<self->max_filters; i++){
-			self->filter_bank[i].enabled = false;
+		for(unsigned i = 0; i<self->max_static_filters; i++){
+			self->static_filter_bank[i].enabled = false;
 		}
 
 
 		// add the required notches from the list to filter bank
 #define DEFAULT_Q 50
-		int i=0;
-		for(; i<self->filter_list->list_len; i++){
+		for(int i=0; i<self->filter_list->list_len; i++){
 			if(i==MAX_BANK_SIZE) break;
-			addNotchFilterToBank(self->filter_bank,
+			addNotchFilterToBank(self->static_filter_bank,
 					self->filter_list->notch_fcs[i],self->sample_rate,i,50);
 		}
-		self->bank_index = i;
 
 
 		// Send a notification that we're using a new filter list.
@@ -385,8 +433,11 @@ work_response(LV2_Handle  instance,
 				self->filter_list->path_len);
 
 
-	} else if (atom->type == self->uris.fftAudio){
+	} else if (atom->type == self->uris.detectionResults){
+
+		printf("Hello!\n");
 		self->executing_fft = false;
+
 	}
 
 	return LV2_WORKER_SUCCESS;
@@ -449,13 +500,22 @@ instantiate(const LV2_Descriptor*     descriptor,
 
 	self->sample_rate = rate;
 
-	self->max_filters = DEFAULT_BANK_SIZE;
+	self->max_static_filters = DEFAULT_BANK_SIZE;
 
 	//allocate some memory for the filter bank
-	self->filter_bank = (BiQuadFilter*) malloc(self->max_filters *sizeof(BiQuadFilter));
+	self->static_filter_bank = (BiQuadFilter*) malloc(self->max_static_filters *sizeof(BiQuadFilter));
 
-	for(unsigned i = 0; i<self->max_filters; i++){
-		self->filter_bank[i].enabled = false;
+	for(unsigned i = 0; i<self->max_static_filters; i++){
+		self->static_filter_bank[i].enabled = false;
+	}
+
+	self->max_auto_filters = DEFAULT_BANK_SIZE;
+
+	//allocate some memory for the filter bank
+	self->auto_filter_bank = (BiQuadFilter*) malloc(self->max_auto_filters *sizeof(BiQuadFilter));
+
+	for(unsigned i = 0; i<self->max_auto_filters; i++){
+		self->auto_filter_bank[i].enabled = false;
 	}
 
 	// Map URIs and initialise forge/logger
@@ -491,7 +551,8 @@ cleanup(LV2_Handle instance)
 {
 	FeedbackSuppressor* self = (FeedbackSuppressor*)instance;
 	free_filter_list(self, self->filter_list);
-	free(self->filter_bank);
+	free(self->static_filter_bank);
+	free(self->auto_filter_bank);
 	fftw_free(self->fft_audio_in); fftw_free(self->fft_audio_out);
 	fftw_destroy_plan(self->plan);
 	free(self->power_spectrum);
@@ -537,16 +598,11 @@ run(LV2_Handle instance,
 	}
 
 
-
-	// Send a message to the worker to process fft stuff
-	//self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
-
-
 	bool send_message = false;
 
 	//Do the required processing
 	for (uint32_t pos = 0; pos < sample_count; ++pos) {
-		output[pos] = processFilterBank(self->filter_bank,input[pos],self->max_filters);
+		output[pos] = processFilterBank(self->static_filter_bank,input[pos],self->max_static_filters);
 		if(!self->executing_fft){
 			//add the input to the fft Buffer
 			self->fft_audio_in[self->sample_count] = input[pos];
@@ -560,7 +616,8 @@ run(LV2_Handle instance,
 	}
 
 	if(send_message) {
-		FFTAudioMessage msg = { { sizeof(bool), self->uris.fftAudio },
+		// Send a message to the worker to process fft stuff
+		FFTExecuteMessage msg = { { sizeof(bool), self->uris.fftExecute },
 				true };
 		self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
 	}

@@ -26,7 +26,8 @@
 #define FS__filterList      FS_URI "#filterList"
 #define FS__applyFilterList FS_URI "#applyFilterList"
 #define FS__freeFilterList  FS_URI "#freeFilterList"
-#define FS__fftAudio  FS_URI "#fftAudio"
+#define FS__fftExecute  FS_URI "#fftExecute"
+#define FS__detectionResults  FS_URI "#detectionResults"
 
 typedef struct {
 	LV2_URID atom_Blank;
@@ -38,7 +39,8 @@ typedef struct {
 	LV2_URID applyFilterList;
 	LV2_URID filterList;
 	LV2_URID freeFilterList;
-	LV2_URID fftAudio;
+	LV2_URID fftExecute;
+	LV2_URID detectionResults;
 	LV2_URID midi_Event;
 	LV2_URID patch_Set;
 	LV2_URID patch_property;
@@ -57,7 +59,8 @@ map_sampler_uris(LV2_URID_Map* map, FeedbackSuppressorURIs* uris)
 	uris->applyFilterList     = map->map(map->handle, FS__applyFilterList);
 	uris->freeFilterList      = map->map(map->handle, FS__freeFilterList);
 	uris->filterList          = map->map(map->handle, FS__filterList);
-	uris->fftAudio			= map->map(map->handle, FS__fftAudio);
+	uris->fftExecute			= map->map(map->handle, FS__fftExecute);
+	uris->detectionResults			= map->map(map->handle, FS__detectionResults);
 	uris->midi_Event         = map->map(map->handle, LV2_MIDI__MidiEvent);
 	uris->patch_Set          = map->map(map->handle, LV2_PATCH__Set);
 	uris->patch_property     = map->map(map->handle, LV2_PATCH__property);
