@@ -22,7 +22,6 @@ HEADERS  += mainwindow.h \
     jack.h \
     qcustomplot.h \
     rngen.h \
-    prbsgen.h \
     hannwindow.h \
 
 FORMS    += mainwindow.ui
