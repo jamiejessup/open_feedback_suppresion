@@ -14,7 +14,7 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with Ardour Scene Manager. If not, see <http://www.gnu.org/licenses/>.
-*/
+ */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -325,7 +325,7 @@ work(LV2_Handle                  instance,
 		if(detect_feedback(max_power_freq,self->sample_rate,self->power_spectrum_db,self->N)) {
 			printf("Feedback Detected at %f\n",max_power_freq);
 		}
-		*/
+		 */
 
 
 
@@ -351,11 +351,14 @@ work(LV2_Handle                  instance,
 		unsigned max_bin = get_max_bin(self->power_spectrum_db, self->N);
 		float max_power_freq = max_bin*self->sample_rate/(float)self->N;
 
-		if(detect_feedback(max_power_freq,self->sample_rate,self->power_spectrum_db,self->N)) {
-			printf("Feedback Detected at %f\n",max_power_freq);
-			msg.new_fc = max_power_freq;
-		} else
-			msg.new_fc = 0;
+		if((max_power_freq > 20) && max_power_freq < 20000) {
+
+			if(detect_feedback(max_power_freq,self->sample_rate,self->power_spectrum_db,self->N)) {
+				printf("Feedback Detected at %f\n",max_power_freq);
+				msg.new_fc = max_power_freq;
+			} else
+				msg.new_fc = 0;
+		}
 
 		respond(handle, sizeof(msg), &msg);
 
@@ -407,8 +410,6 @@ work_response(LV2_Handle  instance,
 		// Send a message to the worker to free the current filter list
 		self->schedule->schedule_work(self->schedule->handle, sizeof(msg), &msg);
 
-
-
 		// Install the new filter list
 		FilterListMessage *list_message = (FilterListMessage *) data;
 		self->filter_list = list_message->list;
@@ -422,8 +423,8 @@ work_response(LV2_Handle  instance,
 #define DEFAULT_Q 50
 		for(int i=0; i<self->filter_list->list_len; i++){
 			if(i==MAX_BANK_SIZE) break;
-			addNotchFilterToBank(self->static_filter_bank,
-					self->filter_list->notch_fcs[i],self->sample_rate,i,50);
+			newNotchFilter(&self->static_filter_bank[i],
+					self->filter_list->notch_fcs[i],self->sample_rate,50);
 		}
 
 
@@ -443,13 +444,16 @@ work_response(LV2_Handle  instance,
 			if(self->auto_filter_bank[i].enabled){
 				//if an existing filter still has feedback cut the gain -3dB
 				if(drm->cuts[i]){
-					newFilterGain(self->auto_filter_bank,i,self->auto_filter_bank[i].gain - 3);
 				} else {
 					//if an existing auto doesn't have feedback anymore, move the gain up or even disable it
 					if(self->auto_filter_bank[i].gain >= -3){
 						self->auto_filter_bank[i].enabled = false;
 					} else
-						newFilterGain(self->auto_filter_bank,i,self->auto_filter_bank[i].gain + 3);
+						newPeakingFilterCoeffs(&self->auto_filter_bank[i],
+								self->auto_filter_bank[i].fc,
+								self->auto_filter_bank[i].fs,
+								self->auto_filter_bank[i].gain + 3,
+								self->auto_filter_bank[i].q);
 				}
 			}
 		}
@@ -466,7 +470,7 @@ work_response(LV2_Handle  instance,
 
 			//set up a new filter if one is available
 			if(index>-1){
-				addFilterToBank(self->auto_filter_bank,drm->new_fc,self->sample_rate,index,-3,50);
+				newPeakingFilter(&self->auto_filter_bank[index],drm->new_fc,self->sample_rate,-3,50);
 			}
 		}
 

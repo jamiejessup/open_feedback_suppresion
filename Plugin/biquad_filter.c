@@ -56,12 +56,13 @@ float processFilterBank(BiQuadFilter *filterBank, float input, unsigned bankSize
 }
 
 
-void addFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int index, float gain, float q) {
-	if(filterBank != NULL){
-		filterBank[index].enabled = true;
-		filterBank[index].is_notch = false;
-		filterBank[index].fc = fc;
-		filterBank[index].fs = fs;
+void newPeakingFilter(BiQuadFilter *filter, float fc, float fs, float gain, float q) {
+	if(filter != NULL){
+		filter->enabled = true;
+		filter->fc = fc;
+		filter->fs = fs;
+		filter->q = q;
+		filter->gain = gain;
 
 
 		float w0 = 2*PI*fc/fs;
@@ -72,31 +73,32 @@ void addFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int index, fl
 
 
 		//zeroes
-		filterBank[index].b0 = 1 + alpha*A;
-		filterBank[index].b1 = -2*wC;
-		filterBank[index].b2 = 1 - alpha*A;
+		filter->b0 = 1 + alpha*A;
+		filter->b1 = -2*wC;
+		filter->b2 = 1 - alpha*A;
 		//poles
-		filterBank[index].a0 = 1+alpha/A;
-		filterBank[index].a1 = -2*wC;
-		filterBank[index].a2 = 1-alpha/A;
+		filter->a0 = 1+alpha/A;
+		filter->a1 = -2*wC;
+		filter->a2 = 1-alpha/A;
 
 		//set i/o to 0
 
-		filterBank[index].x[0] = 0;
-		filterBank[index].x[1] = 0;
-		filterBank[index].x[2] = 0;
-		filterBank[index].y[0] = 0;
-		filterBank[index].y[1] = 0;
-		filterBank[index].y[2] = 0;
+		filter->x[0] = 0;
+		filter->x[1] = 0;
+		filter->x[2] = 0;
+		filter->y[0] = 0;
+		filter->y[1] = 0;
+		filter->y[2] = 0;
 	}
 }
 
-void addNotchFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int index, float q) {
-	if(filterBank != NULL){
-		filterBank[index].enabled = true;
-		filterBank[index].is_notch = true;
-		filterBank[index].fc = fc;
-		filterBank[index].fs = fs;
+void newNotchFilter(BiQuadFilter *filter, float fc, float fs, float q) {
+	if(filter != NULL){
+		filter->enabled = true;
+		filter->fc = fc;
+		filter->fs = fs;
+		filter->q = q;
+		filter->gain = 0;
 
 
 		float w0 = 2*PI*fc/fs;
@@ -106,41 +108,74 @@ void addNotchFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int inde
 
 
 		//zeroes
-		filterBank[index].b0 = 1;
-		filterBank[index].b1 = -2*wC;
-		filterBank[index].b2 = 1;
+		filter->b0 = 1;
+		filter->b1 = -2*wC;
+		filter->b2 = 1;
 		//poles
-		filterBank[index].a0 = 1+alpha;
-		filterBank[index].a1 = -2*wC;
-		filterBank[index].a2 = 1-alpha;
+		filter->a0 = 1+alpha;
+		filter->a1 = -2*wC;
+		filter->a2 = 1-alpha;
 
 		//set i/o to 0
 
-		filterBank[index].x[0] = 0;
-		filterBank[index].x[1] = 0;
-		filterBank[index].x[2] = 0;
-		filterBank[index].y[0] = 0;
-		filterBank[index].y[1] = 0;
-		filterBank[index].y[2] = 0;
+		filter->x[0] = 0;
+		filter->x[1] = 0;
+		filter->x[2] = 0;
+		filter->y[0] = 0;
+		filter->y[1] = 0;
+		filter->y[2] = 0;
 	}
 }
 
-void newFilterGain(BiQuadFilter *filterBank, int index, float gain){
-	if(!filterBank[index].is_notch){
+void newPeakingFilterCoeffs(BiQuadFilter *filter, float fc, float fs, float gain, float q) {
+  if(fc > 20 && fc < 20000){
+  filter->enabled = true;
+		filter->fc = fc;
+		filter->fs = fs;
+		filter->gain = gain;
+		filter->q = q;
 
-		float w0 = 2*PI*filterBank[index].fc/filterBank[index].fs;
+		float w0 = 2*PI*fc/fs;
 		float wS = sin(w0);
 		float wC = cos(w0);
-		float alpha = wS/(2*filterBank[index].q);
 		float A = sqrt(pow(10,gain/20));
+		float alpha = wS/(2*q);
+
 
 		//zeroes
-		filterBank[index].b0 = 1 + alpha*A;
-		filterBank[index].b1 = -2*wC;
-		filterBank[index].b2 = 1 - alpha*A;
+		filter->b0 = 1 + alpha*A;
+		filter->b1 = -2*wC;
+		filter->b2 = 1 - alpha*A;
 		//poles
-		filterBank[index].a0 = 1+alpha/A;
-		filterBank[index].a1 = -2*wC;
-		filterBank[index].a2 = 1-alpha/A;
-	}
+		filter->a0 = 1+alpha/A;
+		filter->a1 = -2*wC;
+		filter->a2 = 1-alpha/A;
+		}
 }
+
+void newNotchFilterCoeffs(BiQuadFilter *filter, float fc, float fs, float q) {
+  if(fc > 20 && fc < 20000){
+		filter->enabled = true;
+		filter->fc = fc;
+		filter->fs = fs;
+		filter->q = q;
+
+
+		float w0 = 2*PI*fc/fs;
+		float wS = sin(w0);
+		float wC = cos(w0);
+		float alpha = wS/(2*q);
+
+
+		//zeroes
+		filter->b0 = 1;
+		filter->b1 = -2*wC;
+		filter->b2 = 1;
+		//poles
+		filter->a0 = 1+alpha;
+		filter->a1 = -2*wC;
+		filter->a2 = 1-alpha;
+		}
+}
+
+

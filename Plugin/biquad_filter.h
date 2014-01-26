@@ -25,10 +25,16 @@ extern "C" {
 #endif
 
 #define PI 3.14159265358979323846264338327
+#define TYPE_NOTCH "notch"
+#define TYPE_PEAKING "peaking"
+#define TYPE_HIPASS "hipass"
+#define TYPE_LOPASS "lopass"
+#define TYPE_HISHELF "hishelf"
+#define TYPE_LOSHELF "loshelf"
 
 typedef struct biQuadFilt{
     bool enabled;
-    bool is_notch;
+    char type[10];
     float fc;
     float fs;
     float b0;
@@ -46,10 +52,10 @@ typedef struct biQuadFilt{
 
 float processFilter(BiQuadFilter *filter, float input);
 float processFilterBank(BiQuadFilter *filterBank, float input, unsigned bankSize);
-void addFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int index,float gain, float q);
-void addNotchFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int index, float q);
-void addNotchFilterToBank(BiQuadFilter *filterBank, float fc, float fs, int index, float q);
-void newFilterGain(BiQuadFilter *filterBank, int index, float gain);
+void newPeakingFilter(BiQuadFilter *filter, float fc, float fs, float gain, float q);
+void newNotchFilter(BiQuadFilter *filter, float fc, float fs, float q);
+void newNotchFilterCoeffs(BiQuadFilter *filter, float fc, float fs, float q);
+void newPeakingFilterCoeffs(BiQuadFilter *filter, float fc, float fs, float gain, float q);
 
 #ifdef __cplusplus
 }
