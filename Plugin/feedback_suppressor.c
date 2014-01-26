@@ -43,6 +43,9 @@ along with Ardour Scene Manager. If not, see <http://www.gnu.org/licenses/>.
 #define MAX_BANK_SIZE 12
 #define DEFAULT_N 24*2048
 
+#define DEF_GAIN_RED 6
+#define DEFAULT_Q 50
+
 enum {
 	FS_CONTROL 	= 0,
 	FS_NOTIFY  	= 1,
@@ -200,7 +203,7 @@ peak_to_neighbour_power_ratio(float f, float fs, float* spectrum_db, int n_bin, 
 
 static bool
 detect_feedback(float f, float fs, float* spectrum_db,unsigned N){
-#define DEFAULT_T_PHPR -30
+#define DEFAULT_T_PHPR -10
 #define DEFAULT_T_PNPR -10
 	return
 			(peak_to_harmonic_power_ratio(f,fs,spectrum_db,3,N) > DEFAULT_T_PHPR) &&
@@ -420,11 +423,10 @@ work_response(LV2_Handle  instance,
 
 
 		// add the required notches from the list to filter bank
-#define DEFAULT_Q 50
 		for(int i=0; i<self->filter_list->list_len; i++){
 			if(i==MAX_BANK_SIZE) break;
 			newNotchFilter(&self->static_filter_bank[i],
-					self->filter_list->notch_fcs[i],self->sample_rate,50);
+					self->filter_list->notch_fcs[i],self->sample_rate,DEFAULT_Q);
 		}
 
 
@@ -446,13 +448,13 @@ work_response(LV2_Handle  instance,
 				if(drm->cuts[i]){
 				} else {
 					//if an existing auto doesn't have feedback anymore, move the gain up or even disable it
-					if(self->auto_filter_bank[i].gain >= -3){
+					if(self->auto_filter_bank[i].gain >= -DEF_GAIN_RED){
 						self->auto_filter_bank[i].enabled = false;
 					} else
 						newPeakingFilterCoeffs(&self->auto_filter_bank[i],
 								self->auto_filter_bank[i].fc,
 								self->auto_filter_bank[i].fs,
-								self->auto_filter_bank[i].gain + 3,
+								self->auto_filter_bank[i].gain + DEF_GAIN_RED,
 								self->auto_filter_bank[i].q);
 				}
 			}
@@ -470,7 +472,7 @@ work_response(LV2_Handle  instance,
 
 			//set up a new filter if one is available
 			if(index>-1){
-				newPeakingFilter(&self->auto_filter_bank[index],drm->new_fc,self->sample_rate,-3,50);
+				newPeakingFilter(&self->auto_filter_bank[index],drm->new_fc,self->sample_rate,-DEF_GAIN_RED,DEFAULT_Q);
 			}
 		}
 
