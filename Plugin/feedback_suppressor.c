@@ -41,7 +41,7 @@ along with Ardour Scene Manager. If not, see <http://www.gnu.org/licenses/>.
 
 #define DEFAULT_BANK_SIZE 12
 #define MAX_BANK_SIZE 12
-#define DEFAULT_N 24*2048
+#define DEFAULT_N 16*2048
 
 #define DEF_GAIN_RED 6
 #define DEFAULT_Q 50
@@ -56,7 +56,7 @@ enum {
 typedef struct {
 	char *path;
 	size_t path_len;
-	float *notch_fcs;
+	float notch_fcs[MAX_BANK_SIZE];
 	size_t list_len;
 } FilterList;
 
@@ -206,8 +206,8 @@ detect_feedback(float f, float fs, float* spectrum_db,unsigned N){
 #define DEFAULT_T_PHPR -10
 #define DEFAULT_T_PNPR -10
 	return
-			(peak_to_harmonic_power_ratio(f,fs,spectrum_db,3,N) > DEFAULT_T_PHPR) &&
-			(peak_to_neighbour_power_ratio(f,fs,spectrum_db,5,N) > DEFAULT_T_PNPR);
+			(peak_to_harmonic_power_ratio(f,fs,spectrum_db,3,N) > DEFAULT_T_PHPR) /*&&
+			(peak_to_neighbour_power_ratio(f,fs,spectrum_db,5,N) > DEFAULT_T_PNPR)*/;
 }
 
 /**
@@ -229,22 +229,18 @@ load_filter_list(FeedbackSuppressor *self, const char *path) {
 	//parse the file to load a filter list
 	FILE *list_file;
 	list_file = fopen(path,"rt");
-	float notches[MAX_BANK_SIZE];
 	int i = 0;
 	if(list_file != NULL) {
 		while(fgets(line,50,list_file)) {
 			//convert the line to a float
 			if(i==MAX_BANK_SIZE) break;
-			notches[i] = atof(line);
+			list->notch_fcs[i] = atof(line);
+			i++;
 		}
 	}
 
-	list->list_len = i+1;
+	list->list_len = i;
 	list->path     = (char*)malloc(path_len + 1);
-	list->notch_fcs = (float*)malloc((i+1)*sizeof(float));
-	for(int j=0; j<i+1; j++){
-		list->notch_fcs[j] = notches[j];
-	}
 	list->path_len = path_len;
 	memcpy(list->path, path, path_len + 1);
 
@@ -425,6 +421,7 @@ work_response(LV2_Handle  instance,
 		// add the required notches from the list to filter bank
 		for(int i=0; i<self->filter_list->list_len; i++){
 			if(i==MAX_BANK_SIZE) break;
+			printf("Installing filter at %f\n",self->filter_list->notch_fcs[i]);
 			newNotchFilter(&self->static_filter_bank[i],
 					self->filter_list->notch_fcs[i],self->sample_rate,DEFAULT_Q);
 		}
@@ -435,7 +432,6 @@ work_response(LV2_Handle  instance,
 		write_set_file(&self->forge, &self->uris,
 				self->filter_list->path,
 				self->filter_list->path_len);
-
 
 	} else if (atom->type == self->uris.detectionResults){
 
@@ -476,8 +472,9 @@ work_response(LV2_Handle  instance,
 			}
 		}
 
-		self->executing_fft = false;
 
+
+		self->executing_fft = false;
 	}
 
 	return LV2_WORKER_SUCCESS;
