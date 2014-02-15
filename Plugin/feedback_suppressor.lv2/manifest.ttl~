@@ -13,7 +13,7 @@
 	lv2:binary <feedback_suppressor.so> ;
 	rdfs:seeAlso <feedback_suppressor.ttl> .
 
-<http://lv2plug.in/plugins/eg-sampler#ui>
+<http://jamiejessup.com/open_feedback_suppressor#ui>
 	a ui:GtkUI ;
 	ui:binary <feedback_suppressor_ui.so> ;
 	rdfs:seeAlso <feedback_suppressor.ttl> .
