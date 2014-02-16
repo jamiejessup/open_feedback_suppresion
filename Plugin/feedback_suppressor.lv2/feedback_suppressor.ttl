@@ -34,25 +34,35 @@
 		lv2:index 0 ;
 		lv2:symbol "control" ;
 		lv2:name "Control"
-	] , [
+        ] , [
+                a lv2:InputPort ;
+                        a lv2:ControlPort ;
+                lv2:index 1 ;
+                lv2:symbol "detect_period" ;
+                lv2:name "Petection Period" ;
+                lv2:portProperty lv2:integer ;
+                lv2:default 1024 ;
+                lv2:minimum 64 ;
+                lv2:maximum 32768;
+        ] , [
 		a lv2:OutputPort ,
 			atom:AtomPort ;
 		atom:bufferType atom:Sequence ;
 		atom:supports patch:Message ;
 		lv2:designation lv2:control ;
-		lv2:index 1 ;
+                lv2:index 2 ;
 		lv2:symbol "notify" ;
 		lv2:name "Notify"
 	] , [
 		a lv2:AudioPort ,
 			lv2:InputPort ;
-		lv2:index 2 ;
+                lv2:index 3 ;
 		lv2:symbol "in" ;
 		lv2:name "In"
 	], [
 		a lv2:AudioPort ,
 			lv2:OutputPort ;
-		lv2:index 3 ;
+                lv2:index 4 ;
 		lv2:symbol "out" ;
 		lv2:name "Out"
 	].

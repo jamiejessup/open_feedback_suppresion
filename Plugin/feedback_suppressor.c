@@ -48,9 +48,10 @@ along with Ardour Scene Manager. If not, see <http://www.gnu.org/licenses/>.
 
 enum {
 	FS_CONTROL 	= 0,
-	FS_NOTIFY  	= 1,
-	FS_IN		= 2,
-	FS_OUT     	= 3
+    FS_DET_PERIOD = 1,
+    FS_NOTIFY  	= 2,
+    FS_IN		= 3,
+    FS_OUT     	= 4
 };
 
 typedef struct {
@@ -245,8 +246,6 @@ load_filter_list(FeedbackSuppressor *self, const char *path) {
 	memcpy(list->path, path, path_len + 1);
 
 	return list;
-
-
 }
 
 
@@ -642,9 +641,13 @@ run(LV2_Handle instance,
 		float temp_output = processFilterBank(self->static_filter_bank,input[pos],self->max_static_filters);
 		output[pos] = processFilterBank(self->auto_filter_bank,temp_output,self->max_static_filters);
 		if(!self->executing_fft){
+            /* This code needs to change to use a ring buffer */
+
 			//add the input to the fft Buffer
 			self->fft_audio_in[self->sample_count] = input[pos];
 			self->sample_count++;
+
+            //this code is going to be changed to check the sample detection period has elapsed
 			if(self->sample_count >= self->N-1){
 				self->sample_count = 0;
 				self->executing_fft = true;
